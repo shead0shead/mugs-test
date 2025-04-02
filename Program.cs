@@ -197,10 +197,12 @@ public class UpdateChecker
 
             if (latestVersion > CurrentVersion)
             {
-                ConsoleHelper.WriteResponse($"Доступно обновление {latestVersion} (текущая версия {CurrentVersion})");
-                ConsoleHelper.WriteResponse($"Скачать: {release.html_url}");
-                ConsoleHelper.WriteResponse($"Описание: {release.body}");
-                ConsoleHelper.WriteResponse($"Для установки введите: update install");
+                ConsoleHelper.WriteResponse(
+                    $"Доступно обновление {latestVersion} (текущая версия {CurrentVersion})\n" +
+                    $"Скачать: {release.html_url}\n" +
+                    $"Описание: {release.body}\n" +
+                    $"Для установки введите: update install"
+                );
             }
             else if (notifyIfNoUpdate)
             {
