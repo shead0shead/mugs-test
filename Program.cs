@@ -172,6 +172,19 @@ public static class ConsoleHelper
         }
         Console.WriteLine();
     }
+
+    public static void WriteDebug(string message)
+    {
+        var lines = message.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None);
+
+        foreach (var line in lines)
+        {
+            Console.ForegroundColor = ConsoleColor.DarkYellow;
+            Console.Write($"[DEBUG] ");
+            Console.ResetColor();
+            Console.WriteLine(line);
+        }
+    }
 }
 
 public class UpdateChecker
@@ -326,6 +339,7 @@ public class ExtensionManager
 
     public async Task InstallFromUrlAsync(string url, string fileName = null)
     {
+        string tempFilePath = null;
         try
         {
             ConsoleHelper.WriteResponse($"Установка дополнения из URL: {url}");
@@ -337,9 +351,21 @@ public class ExtensionManager
             fileName = fileName ?? Path.GetFileName(url) ?? $"extension_{DateTime.Now:yyyyMMddHHmmss}.csx";
             var filePath = Path.Combine(_extensionsPath, fileName);
 
-            await using var stream = await response.Content.ReadAsStreamAsync();
-            await using var fileStream = File.Create(filePath);
-            await stream.CopyToAsync(fileStream);
+            // Сначала сохраняем во временный файл
+            tempFilePath = Path.GetTempFileName();
+            await using (var stream = await response.Content.ReadAsStreamAsync())
+            await using (var fileStream = File.Create(tempFilePath))
+            {
+                await stream.CopyToAsync(fileStream);
+            }
+
+            // Читаем из временного файла для извлечения метаданных
+            var fileContent = await File.ReadAllTextAsync(tempFilePath);
+            var (author, version) = ExtractMetadataFromContent(fileContent);
+
+            // Переносим временный файл в конечное расположение
+            if (File.Exists(filePath)) File.Delete(filePath);
+            File.Move(tempFilePath, filePath);
 
             var metadata = new ExtensionMetadata
             {
@@ -348,8 +374,8 @@ public class ExtensionManager
                 InstallPath = filePath,
                 OriginalUrl = url,
                 InstallDate = DateTime.Now,
-                Author = "Unknown",
-                Version = "1.0"
+                Author = author ?? "Unknown",
+                Version = version ?? "1.0"
             };
 
             _extensions.Add(metadata);
@@ -361,6 +387,55 @@ public class ExtensionManager
         {
             ConsoleHelper.WriteError($"Ошибка установки дополнения: {ex.Message}");
         }
+        finally
+        {
+            // Удаляем временный файл, если он существует
+            if (tempFilePath != null && File.Exists(tempFilePath))
+            {
+                try { File.Delete(tempFilePath); }
+                catch { /* Игнорируем ошибки удаления временного файла */ }
+            }
+        }
+    }
+
+    private (string author, string version) ExtractMetadataFromContent(string content)
+    {
+        string author = null;
+        string version = null;
+
+        try
+        {
+            var lines = content.Split('\n');
+            foreach (var line in lines)
+            {
+                if (line.Contains("Author =>") && author == null)
+                {
+                    var start = line.IndexOf('"') + 1;
+                    var end = line.LastIndexOf('"');
+                    if (start > 0 && end > start)
+                    {
+                        author = line.Substring(start, end - start);
+                    }
+                }
+                else if (line.Contains("Version =>") && version == null)
+                {
+                    var start = line.IndexOf('"') + 1;
+                    var end = line.LastIndexOf('"');
+                    if (start > 0 && end > start)
+                    {
+                        version = line.Substring(start, end - start);
+                    }
+                }
+
+                if (author != null && version != null) break;
+            }
+        }
+        catch
+        {
+            // В случае ошибки просто возвращаем null значения
+        }
+
+        return (author, version);
     }
 
     public async Task InstallFromGitHubAsync(string repoUrl)
@@ -531,6 +606,7 @@ public class CommandManager
         RegisterCommand(new TimeCommand());
         RegisterCommand(new UpdateCommand());
         RegisterCommand(new NewCommand(this));
+        RegisterCommand(new DebugCommand(this));
 
         var extensionManager = new ExtensionManager(_extensionsPath);
         RegisterCommand(new ExtensionsCommand(this, extensionManager));
@@ -701,7 +777,7 @@ public class CommandManager
     private class HelpCommand : ICommand
     {
         private readonly CommandManager _manager;
-        private readonly HashSet<string> _builtInCommands = new() { "help", "list", "reload", "clear", "restart", "time", "update", "new", "extensions" };
+        private readonly HashSet<string> _builtInCommands = new() { "help", "list", "reload", "clear", "restart", "time", "update", "new", "extensions", "debug" };
 
         public HelpCommand(CommandManager manager) => _manager = manager;
         public string Name => "help";
@@ -1338,6 +1414,79 @@ new {char.ToUpper(commandName[0]) + commandName.Substring(1)}Command()";
             await _manager.LoadCommandsAsync();
         }
     }
+
+    private class DebugCommand : ICommand
+    {
+        private readonly CommandManager _manager;
+
+        public DebugCommand(CommandManager manager) => _manager = manager;
+        public string Name => "debug";
+        public string Description => "Запускает команду в режиме отладки";
+        public IEnumerable<string> Aliases => Enumerable.Empty<string>();
+        public string Author => "System";
+        public string Version => "1.0";
+        public string? UsageExample => "debug mycommand --args \"test\"";
+
+        public async Task ExecuteAsync(string[] args)
+        {
+            if (args.Length == 0)
+            {
+                ConsoleHelper.WriteError("Укажите команду для отладки (например: debug mycommand --args \"test\")");
+                return;
+            }
+
+            var commandName = args[0];
+            var commandArgs = ParseDebugArgs(args.Skip(1).ToArray());
+
+            var command = _manager.GetCommand(commandName);
+            if (command == null)
+            {
+                ConsoleHelper.WriteError($"Команда '{commandName}' не найдена");
+                return;
+            }
+
+            ConsoleHelper.WriteDebug($"Запуск {commandName} с аргументами: {string.Join(" ", commandArgs)}");
+            ConsoleHelper.WriteDebug($"Переменные: args = {JsonConvert.SerializeObject(commandArgs)}");
+
+            try
+            {
+                var stopwatch = Stopwatch.StartNew();
+                await command.ExecuteAsync(commandArgs);
+                stopwatch.Stop();
+
+                ConsoleHelper.WriteDebug($"Команда выполнена за {stopwatch.ElapsedMilliseconds} мс");
+            }
+            catch (Exception ex)
+            {
+                ConsoleHelper.WriteDebug($"Ошибка выполнения: {ex.GetType().Name}: {ex.Message}");
+                throw;
+            }
+        }
+
+        private string[] ParseDebugArgs(string[] args)
+        {
+            var result = new List<string>();
+            for (int i = 0; i < args.Length; i++)
+            {
+                if (args[i] == "--args" && i + 1 < args.Length)
+                {
+                    // Обрабатываем аргументы в кавычках
+                    var argValue = args[i + 1];
+                    if (argValue.StartsWith("\"") && argValue.EndsWith("\""))
+                    {
+                        argValue = argValue.Substring(1, argValue.Length - 2);
+                    }
+                    result.Add(argValue);
+                    i++; // Пропускаем следующий аргумент, так как мы его уже обработали
+                }
+                else
+                {
+                    result.Add(args[i]);
+                }
+            }
+            return result.ToArray();
+        }
+    }
 }
 
 public class CommandGlobals
@@ -1346,6 +1495,10 @@ public class CommandGlobals
     public void PrintError(string message) => ConsoleHelper.WriteError(message);
     public string ReadLine() => Console.ReadLine();
     public string Version => "1.0";
+
+    // Добавляем методы для отладки
+    public void DebugLog(string message) => ConsoleHelper.WriteDebug(message);
+    public void DebugVar(string name, object value) => ConsoleHelper.WriteDebug($"Переменная: {name} = {JsonConvert.SerializeObject(value)}");
 
     public CommandManager Manager { get; set; }
 }
