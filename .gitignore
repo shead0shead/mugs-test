@@ -1,2 +1,5 @@
 ﻿.vs
 obj
+bin
+Properties
+mugs-test.csproj.user
