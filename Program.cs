@@ -176,8 +176,8 @@ public static class ConsoleHelper
 
 public class UpdateChecker
 {
-    private const string GitHubRepoOwner = "mugs-community";
-    private const string GitHubRepoName = "Mugs";
+    private const string GitHubRepoOwner = "shead0shead";
+    private const string GitHubRepoName = "mugs-test";
     private const string GitHubReleasesUrl = $"https://api.github.com/repos/{GitHubRepoOwner}/{GitHubRepoName}/releases/latest";
     private static readonly HttpClient _httpClient = new HttpClient();
     private static readonly Version CurrentVersion = new Version("1.0.0");
