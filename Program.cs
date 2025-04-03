@@ -332,8 +332,16 @@ public static class ConsoleHelper
     private static int inputRow = -1;
     private static List<string> commandHistory = new List<string>();
     private static int historyIndex = -1;
+
+    // Цвета для разных типов сообщений
     private const char BorderChar = '▌';
-    private static readonly ConsoleColor BorderColor = ConsoleColor.DarkGray;
+    private static readonly ConsoleColor DefaultBorderColor = ConsoleColor.DarkGray;
+    private static readonly ConsoleColor SuccessBorderColor = ConsoleColor.DarkGreen;
+    private static readonly ConsoleColor WarningBorderColor = ConsoleColor.DarkYellow;
+    private static readonly ConsoleColor ErrorBorderColor = ConsoleColor.DarkRed;
+    private static readonly ConsoleColor InfoBorderColor = ConsoleColor.DarkCyan;
+    private static readonly ConsoleColor DebugBorderColor = ConsoleColor.DarkMagenta;
+    private static readonly ConsoleColor CommandBorderColor = ConsoleColor.DarkBlue;
 
     public static void Initialize()
     {
@@ -448,44 +456,63 @@ public static class ConsoleHelper
     public static void WriteResponse(string messageKey, params object[] args)
     {
         var message = Localization.GetString(messageKey, args);
-        var lines = message.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None);
+        WriteColored(message, DefaultBorderColor);
+    }
 
-        foreach (var line in lines)
-        {
-            Console.ForegroundColor = BorderColor;
-            Console.Write($"{BorderChar} ");
-            Console.ResetColor();
-            Console.WriteLine(line);
-        }
-        Console.WriteLine();
+    public static void WriteSuccess(string messageKey, params object[] args)
+    {
+        var message = Localization.GetString(messageKey, args);
+        WriteColored(message, SuccessBorderColor);
+    }
+
+    public static void WriteWarning(string messageKey, params object[] args)
+    {
+        var message = Localization.GetString(messageKey, args);
+        WriteColored(message, WarningBorderColor);
     }
 
     public static void WriteError(string messageKey, params object[] args)
     {
         var message = Localization.GetString(messageKey, args);
-        var lines = message.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None);
+        WriteColored(message, ErrorBorderColor);
+    }
 
-        foreach (var line in lines)
-        {
-            Console.ForegroundColor = ConsoleColor.Red;
-            Console.Write($"{BorderChar} ");
-            Console.WriteLine(line);
-            Console.ResetColor();
-        }
-        Console.WriteLine();
+    public static void WriteInfo(string messageKey, params object[] args)
+    {
+        var message = Localization.GetString(messageKey, args);
+        WriteColored(message, InfoBorderColor);
+    }
+
+    public static void WriteCommand(string messageKey, params object[] args)
+    {
+        var message = Localization.GetString(messageKey, args);
+        WriteColored(message, CommandBorderColor);
     }
 
     public static void WriteDebug(string message)
     {
         var lines = message.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None);
-
         foreach (var line in lines)
         {
-            Console.ForegroundColor = ConsoleColor.DarkYellow;
-            Console.Write($"[DEBUG] ");
+            Console.ForegroundColor = DebugBorderColor;
+            Console.Write($"{BorderChar} ");
+            Console.ResetColor();
+            Console.WriteLine($"[DEBUG] {line}");
+        }
+        Console.WriteLine();
+    }
+
+    private static void WriteColored(string message, ConsoleColor borderColor)
+    {
+        var lines = message.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None);
+        foreach (var line in lines)
+        {
+            Console.ForegroundColor = borderColor;
+            Console.Write($"{BorderChar} ");
             Console.ResetColor();
             Console.WriteLine(line);
         }
+        Console.WriteLine();
     }
 }
 
