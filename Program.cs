@@ -187,6 +187,56 @@ public static class ConsoleHelper
     }
 }
 
+public class VerifiedExtensionsChecker
+{
+    private const string VerifiedHashesUrl = "https://raw.githubusercontent.com/shead0shead/mugs-test/main/verified_hashes.json";
+    private static readonly HttpClient _httpClient = new HttpClient();
+    private static Dictionary<string, string> _verifiedHashes = new Dictionary<string, string>();
+    private static bool _hashesLoaded = false;
+
+    static VerifiedExtensionsChecker()
+    {
+        _httpClient.DefaultRequestHeaders.Add("User-Agent", "ConsoleAppVerifiedChecker");
+    }
+
+    public static async Task EnsureHashesLoadedAsync()
+    {
+        if (_hashesLoaded) return;
+
+        try
+        {
+            var response = await _httpClient.GetStringAsync(VerifiedHashesUrl);
+            _verifiedHashes = JsonConvert.DeserializeObject<Dictionary<string, string>>(response);
+            _hashesLoaded = true;
+        }
+        catch (Exception ex)
+        {
+            ConsoleHelper.WriteError($"Ошибка загрузки проверенных хешей: {ex.Message}");
+            _verifiedHashes = new Dictionary<string, string>();
+            _hashesLoaded = true; // Чтобы не пытаться загружать снова
+        }
+    }
+
+    public static bool IsExtensionVerified(string fileName)
+    {
+        if (!_hashesLoaded || !_verifiedHashes.Any())
+            return false;
+
+        // Нормализуем имя файла для сравнения
+        var normalizedFileName = fileName.ToLowerInvariant();
+
+        return _verifiedHashes.Any(kv =>
+            kv.Key.ToLowerInvariant() == normalizedFileName);
+    }
+
+    public static string? GetVerifiedHash(string fileName)
+    {
+        var normalizedFileName = fileName.ToLowerInvariant();
+        return _verifiedHashes.FirstOrDefault(kv =>
+            kv.Key.ToLowerInvariant() == normalizedFileName).Value;
+    }
+}
+
 public class UpdateChecker
 {
     private const string GitHubRepoOwner = "shead0shead";
@@ -328,7 +378,7 @@ public class ExtensionManager
             var commandName = name.ToLowerInvariant();
             var disabledFiles = Directory.GetFiles(_extensionsPath, "*.csx.disable")
                 .Where(f => Path.GetFileNameWithoutExtension(Path.GetFileNameWithoutExtension(f))
-                    .Equals(commandName, StringComparison.OrdinalIgnoreCase))
+                .Equals(commandName, StringComparison.OrdinalIgnoreCase))
                 .ToList();
 
             if (!disabledFiles.Any())
@@ -665,50 +715,69 @@ public class CommandManager
         public string Version => "1.0";
         public string? UsageExample => "help update, help new";
 
-        public Task ExecuteAsync(string[] args)
+        public async Task ExecuteAsync(string[] args)
         {
-            var response = new StringBuilder();
+            await VerifiedExtensionsChecker.EnsureHashesLoadedAsync();
 
-            if (args.Length > 0)
+            var response = new StringBuilder();
+            var allCommands = _manager.GetAllCommands()
+                .GroupBy(c => c.Name)
+                .Select(g => g.First())
+                .OrderBy(c => c.Name)
+                .ToList();
+
+            // Встроенные команды
+            response.AppendLine("Встроенные команды:");
+            foreach (var cmd in allCommands.Where(c => _builtInCommands.Contains(c.Name)))
             {
-                var command = _manager.GetCommand(args[0]);
-                if (command != null)
+                response.AppendLine($"  {FormatCommand(cmd)}");
+            }
+
+            // Проверенные команды
+            var verifiedCommands = new List<ICommand>();
+            foreach (var cmd in allCommands.Where(c => !_builtInCommands.Contains(c.Name)))
+            {
+                var fileName = $"{cmd.Name.ToLower()}.csx";
+                if (VerifiedExtensionsChecker.IsExtensionVerified(fileName))
                 {
-                    var aliases = command.Aliases.Any() ? $" (алиасы: {string.Join(", ", command.Aliases)})" : "";
-                    var commandType = _builtInCommands.Contains(command.Name) ? " (встроенная)" : " (сторонняя)";
-                    response.AppendLine($"{command.Name}{commandType}{aliases}: {command.Description}");
-                    response.AppendLine($"Автор: {command.Author}");
-                    response.AppendLine($"Версия: {command.Version}");
-                    if (!string.IsNullOrEmpty(command.UsageExample))
-                    {
-                        response.AppendLine($"Примеры использования: {command.UsageExample}");
-                    }
-                    ConsoleHelper.WriteResponse(response.ToString().TrimEnd());
-                    return Task.CompletedTask;
+                    verifiedCommands.Add(cmd);
                 }
             }
 
-            response.AppendLine("Встроенные команды:");
-            foreach (var cmd in _manager.GetAllCommands().Where(c => _builtInCommands.Contains(c.Name)))
+            if (verifiedCommands.Any())
             {
-                var aliases = cmd.Aliases.Any() ? $" ({string.Join(", ", cmd.Aliases)})" : "";
-                response.AppendLine($"  {cmd.Name,-12}{aliases,-15} - {cmd.Description}");
+                response.AppendLine("\nПроверенные команды (✅ безопасны):");
+                foreach (var cmd in verifiedCommands)
+                {
+                    response.AppendLine($"  {FormatCommand(cmd)} ✅");
+                }
             }
 
-            var external = _manager.GetAllCommands().Except(_manager.GetAllCommands().Where(c => _builtInCommands.Contains(c.Name))).ToList();
-            if (external.Any())
+            // Сторонние команды
+            var externalCommands = allCommands
+                .Where(c => !_builtInCommands.Contains(c.Name) &&
+                       !verifiedCommands.Contains(c))
+                .ToList();
+
+            if (externalCommands.Any())
             {
-                response.AppendLine("\nСторонние команды:");
-                foreach (var cmd in external)
+                response.AppendLine("\nСторонние команды (используйте с осторожностью):");
+                foreach (var cmd in externalCommands)
                 {
-                    var aliases = cmd.Aliases.Any() ? $" ({string.Join(", ", cmd.Aliases)})" : "";
-                    response.AppendLine($"  {cmd.Name,-12}{aliases,-15} - {cmd.Description}");
+                    response.AppendLine($"  {FormatCommand(cmd)}");
                 }
             }
 
             response.Append("\nДля подробной справки по команде введите: help <команда>");
             ConsoleHelper.WriteResponse(response.ToString());
-            return Task.CompletedTask;
+        }
+
+        private string FormatCommand(ICommand cmd)
+        {
+            var aliases = cmd.Aliases.Any()
+                ? $" ({string.Join(", ", cmd.Aliases)})"
+                : "";
+            return $"{cmd.Name,-12}{aliases,-15} - {cmd.Description}";
         }
     }
 
@@ -724,16 +793,28 @@ public class CommandManager
         public string Version => "1.0";
         public string? UsageExample => null;
 
-        public Task ExecuteAsync(string[] args)
+        public async Task ExecuteAsync(string[] args)
         {
+            await VerifiedExtensionsChecker.EnsureHashesLoadedAsync();
+
             var response = new StringBuilder();
             response.AppendLine("Доступные команды (основные и алиасы):");
 
-            foreach (var cmd in _manager.GetAllCommands())
+            foreach (var cmd in _manager.GetAllCommands()
+                .GroupBy(c => c.Name)
+                .Select(g => g.First())
+                .OrderBy(c => c.Name))
             {
-                var aliases = cmd.Aliases.Any() ? $" (алиасы: {string.Join(", ", cmd.Aliases)})" : "";
-                response.AppendLine($"- {cmd.Name}{aliases}");
+                var fileName = $"{cmd.Name.ToLower()}.csx";
+                var isVerified = VerifiedExtensionsChecker.IsExtensionVerified(fileName);
+                var verifiedMark = isVerified ? " ✅" : "";
+
+                response.AppendLine($"- {cmd.Name}{(cmd.Aliases.Any() ? $" (алиасы: {string.Join(", ", cmd.Aliases)})" : "")}{verifiedMark}");
                 response.AppendLine($"  Версия: {cmd.Version}, Автор: {cmd.Author}");
+                if (isVerified)
+                {
+                    response.AppendLine("  Проверено разработчиками");
+                }
                 if (!string.IsNullOrEmpty(cmd.UsageExample))
                 {
                     response.AppendLine($"  Пример: {cmd.UsageExample}");
@@ -747,13 +828,15 @@ public class CommandManager
                 response.AppendLine("Отключенные дополнения:");
                 foreach (var file in disabledFiles)
                 {
-                    response.AppendLine($"- {Path.GetFileNameWithoutExtension(file)}");
+                    var fileName = Path.GetFileNameWithoutExtension(file);
+                    var isVerified = VerifiedExtensionsChecker.IsExtensionVerified($"{fileName}.csx");
+                    var verifiedMark = isVerified ? " ✅" : "";
+                    response.AppendLine($"- {fileName}{verifiedMark}");
                 }
                 response.AppendLine("\nДля включения используйте: enable <имя_команды>");
             }
 
             ConsoleHelper.WriteResponse(response.ToString().TrimEnd());
-            return Task.CompletedTask;
         }
     }
 
