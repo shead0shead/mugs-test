@@ -291,290 +291,168 @@ public class UpdateChecker
     }
 }
 
-public class ExtensionMetadata
-{
-    public string Name { get; set; }
-    public string Source { get; set; }
-    public string InstallPath { get; set; }
-    public string OriginalUrl { get; set; }
-    public string Author { get; set; }
-    public string Version { get; set; }
-    public DateTime InstallDate { get; set; }
-}
-
 public class ExtensionManager
 {
     private readonly string _extensionsPath;
-    private readonly string _metadataFilePath;
-    private List<ExtensionMetadata> _extensions;
 
     public ExtensionManager(string extensionsPath)
     {
         _extensionsPath = extensionsPath;
-        _metadataFilePath = Path.Combine(extensionsPath, ".metadata.json");
         Directory.CreateDirectory(extensionsPath);
-        LoadMetadata();
     }
 
-    private void LoadMetadata()
+    public async Task EnableExtensionAsync(string name)
     {
-        if (File.Exists(_metadataFilePath))
+        if (string.IsNullOrEmpty(name))
         {
-            var json = File.ReadAllText(_metadataFilePath);
-            _extensions = JsonConvert.DeserializeObject<List<ExtensionMetadata>>(json) ?? new List<ExtensionMetadata>();
+            ConsoleHelper.WriteError("Укажите имя команды или файла дополнения для включения");
+            return;
+        }
+
+        string disabledFile;
+        string enabledFile;
+
+        if (name.EndsWith(".csx.disable", StringComparison.OrdinalIgnoreCase))
+        {
+            disabledFile = Path.Combine(_extensionsPath, name);
+            if (!File.Exists(disabledFile))
+            {
+                ConsoleHelper.WriteError($"Файл '{name}' не найден");
+                return;
+            }
+
+            enabledFile = Path.Combine(_extensionsPath, Path.GetFileNameWithoutExtension(name));
         }
         else
         {
-            _extensions = new List<ExtensionMetadata>();
+            var commandName = name.ToLowerInvariant();
+            var disabledFiles = Directory.GetFiles(_extensionsPath, "*.csx.disable")
+                .Where(f => Path.GetFileNameWithoutExtension(Path.GetFileNameWithoutExtension(f))
+                    .Equals(commandName, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+            if (!disabledFiles.Any())
+            {
+                var possibleFile = Path.Combine(_extensionsPath, commandName + ".csx.disable");
+                if (File.Exists(possibleFile))
+                {
+                    disabledFiles.Add(possibleFile);
+                }
+                else
+                {
+                    ConsoleHelper.WriteError($"Не найдено отключенных дополнений для команды/файла '{commandName}'");
+                    return;
+                }
+            }
+
+            if (disabledFiles.Count > 1)
+            {
+                ConsoleHelper.WriteResponse($"Найдено несколько отключенных дополнений для команды '{commandName}':");
+                foreach (var file in disabledFiles)
+                {
+                    ConsoleHelper.WriteResponse($"- {Path.GetFileName(file)}");
+                }
+                ConsoleHelper.WriteError("Уточните имя файла для включения");
+                return;
+            }
+
+            disabledFile = disabledFiles.First();
+            enabledFile = Path.Combine(_extensionsPath, Path.GetFileNameWithoutExtension(disabledFile));
         }
+
+        File.Move(disabledFile, enabledFile);
+        ConsoleHelper.WriteResponse($"Дополнение '{Path.GetFileName(enabledFile)}' включено");
     }
 
-    private void SaveMetadata()
+    public async Task DisableExtensionAsync(string name)
     {
-        var json = JsonConvert.SerializeObject(_extensions, Formatting.Indented);
-        File.WriteAllText(_metadataFilePath, json);
+        if (string.IsNullOrEmpty(name))
+        {
+            ConsoleHelper.WriteError("Укажите имя команды или файла дополнения для отключения");
+            return;
+        }
+
+        string sourceFile;
+        string disabledFile;
+
+        if (name.EndsWith(".csx", StringComparison.OrdinalIgnoreCase))
+        {
+            sourceFile = Path.Combine(_extensionsPath, name);
+            if (!File.Exists(sourceFile))
+            {
+                ConsoleHelper.WriteError($"Файл '{name}' не найден");
+                return;
+            }
+
+            disabledFile = sourceFile + ".disable";
+        }
+        else
+        {
+            var commandName = name.ToLowerInvariant();
+            var sourceFiles = Directory.GetFiles(_extensionsPath, "*.csx")
+                .Where(f => Path.GetFileNameWithoutExtension(f)
+                    .Equals(commandName, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+            if (!sourceFiles.Any())
+            {
+                var possibleFile = Path.Combine(_extensionsPath, commandName + ".csx");
+                if (File.Exists(possibleFile))
+                {
+                    sourceFile = possibleFile;
+                    disabledFile = possibleFile + ".disable";
+                    File.Move(sourceFile, disabledFile);
+                    ConsoleHelper.WriteResponse($"Дополнение '{Path.GetFileName(sourceFile)}' отключено");
+                    return;
+                }
+
+                ConsoleHelper.WriteError($"Команда/файл '{commandName}' не найдена");
+                return;
+            }
+
+            if (sourceFiles.Count > 1)
+            {
+                ConsoleHelper.WriteResponse($"Найдено несколько дополнений для команды '{commandName}':");
+                foreach (var file in sourceFiles)
+                {
+                    ConsoleHelper.WriteResponse($"- {Path.GetFileName(file)}");
+                }
+                ConsoleHelper.WriteError("Уточните имя файла для отключения");
+                return;
+            }
+
+            sourceFile = sourceFiles.First();
+            disabledFile = sourceFile + ".disable";
+        }
+
+        File.Move(sourceFile, disabledFile);
+        ConsoleHelper.WriteResponse($"Дополнение '{Path.GetFileName(sourceFile)}' отключено");
     }
 
-    public IEnumerable<ExtensionMetadata> GetExtensions() => _extensions;
-
-    public async Task InstallFromUrlAsync(string url, string fileName = null)
+    public async Task ImportFromUrlAsync(string url)
     {
-        string tempFilePath = null;
         try
         {
-            ConsoleHelper.WriteResponse($"Установка дополнения из URL: {url}");
+            ConsoleHelper.WriteResponse($"Загрузка дополнения из URL: {url}");
 
             using var client = new HttpClient();
             var response = await client.GetAsync(url);
             response.EnsureSuccessStatusCode();
 
-            fileName = fileName ?? Path.GetFileName(url) ?? $"extension_{DateTime.Now:yyyyMMddHHmmss}.csx";
+            var fileName = Path.GetFileName(url) ?? $"extension_{DateTime.Now:yyyyMMddHHmmss}.csx";
             var filePath = Path.Combine(_extensionsPath, fileName);
 
-            // Сначала сохраняем во временный файл
-            tempFilePath = Path.GetTempFileName();
-            await using (var stream = await response.Content.ReadAsStreamAsync())
-            await using (var fileStream = File.Create(tempFilePath))
-            {
-                await stream.CopyToAsync(fileStream);
-            }
+            // Скачиваем файл
+            await using var stream = await response.Content.ReadAsStreamAsync();
+            await using var fileStream = File.Create(filePath);
+            await stream.CopyToAsync(fileStream);
 
-            // Читаем из временного файла для извлечения метаданных
-            var fileContent = await File.ReadAllTextAsync(tempFilePath);
-            var (author, version) = ExtractMetadataFromContent(fileContent);
-
-            // Переносим временный файл в конечное расположение
-            if (File.Exists(filePath)) File.Delete(filePath);
-            File.Move(tempFilePath, filePath);
-
-            var metadata = new ExtensionMetadata
-            {
-                Name = Path.GetFileNameWithoutExtension(fileName),
-                Source = "url",
-                InstallPath = filePath,
-                OriginalUrl = url,
-                InstallDate = DateTime.Now,
-                Author = author ?? "Unknown",
-                Version = version ?? "1.0"
-            };
-
-            _extensions.Add(metadata);
-            SaveMetadata();
-
-            ConsoleHelper.WriteResponse($"Дополнение успешно установлено: {fileName}");
+            ConsoleHelper.WriteResponse($"Дополнение успешно загружено: {fileName}");
         }
         catch (Exception ex)
         {
-            ConsoleHelper.WriteError($"Ошибка установки дополнения: {ex.Message}");
+            ConsoleHelper.WriteError($"Ошибка загрузки дополнения: {ex.Message}");
         }
-        finally
-        {
-            // Удаляем временный файл, если он существует
-            if (tempFilePath != null && File.Exists(tempFilePath))
-            {
-                try { File.Delete(tempFilePath); }
-                catch { /* Игнорируем ошибки удаления временного файла */ }
-            }
-        }
-    }
-
-    private (string author, string version) ExtractMetadataFromContent(string content)
-    {
-        string author = null;
-        string version = null;
-
-        try
-        {
-            var lines = content.Split('\n');
-            foreach (var line in lines)
-            {
-                if (line.Contains("Author =>") && author == null)
-                {
-                    var start = line.IndexOf('"') + 1;
-                    var end = line.LastIndexOf('"');
-                    if (start > 0 && end > start)
-                    {
-                        author = line.Substring(start, end - start);
-                    }
-                }
-                else if (line.Contains("Version =>") && version == null)
-                {
-                    var start = line.IndexOf('"') + 1;
-                    var end = line.LastIndexOf('"');
-                    if (start > 0 && end > start)
-                    {
-                        version = line.Substring(start, end - start);
-                    }
-                }
-
-                if (author != null && version != null) break;
-            }
-        }
-        catch
-        {
-            // В случае ошибки просто возвращаем null значения
-        }
-
-        return (author, version);
-    }
-
-    public async Task InstallFromGitHubAsync(string repoUrl)
-    {
-        try
-        {
-            ConsoleHelper.WriteResponse($"Установка дополнения из GitHub: {repoUrl}");
-
-            var uri = new Uri(repoUrl);
-            var segments = uri.Segments;
-            var owner = segments[1].Trim('/');
-            var repo = segments[2].Trim('/');
-
-            var apiUrl = $"https://api.github.com/repos/{owner}/{repo}/contents";
-            using var client = new HttpClient();
-            client.DefaultRequestHeaders.Add("User-Agent", "MugsExtensionInstaller");
-
-            var response = await client.GetStringAsync(apiUrl);
-            var contents = JsonConvert.DeserializeObject<List<GitHubContent>>(response);
-
-            var extensions = contents
-                .Where(c => c.Name.EndsWith(".csx") && c.Type == "file")
-                .ToList();
-
-            if (!extensions.Any())
-            {
-                ConsoleHelper.WriteError("В репозитории не найдены файлы дополнений (.csx)");
-                return;
-            }
-
-            foreach (var ext in extensions)
-            {
-                var filePath = Path.Combine(_extensionsPath, ext.Name);
-                var downloadUrl = ext.DownloadUrl;
-
-                using var fileResponse = await client.GetAsync(downloadUrl);
-                fileResponse.EnsureSuccessStatusCode();
-
-                await using var stream = await fileResponse.Content.ReadAsStreamAsync();
-                await using var fileStream = File.Create(filePath);
-                await stream.CopyToAsync(fileStream);
-
-                var metadata = new ExtensionMetadata
-                {
-                    Name = Path.GetFileNameWithoutExtension(ext.Name),
-                    Source = "github",
-                    InstallPath = filePath,
-                    OriginalUrl = repoUrl,
-                    InstallDate = DateTime.Now,
-                    Author = owner,
-                    Version = "1.0"
-                };
-
-                _extensions.Add(metadata);
-                ConsoleHelper.WriteResponse($"Установлено: {ext.Name}");
-            }
-
-            SaveMetadata();
-            ConsoleHelper.WriteResponse("Все дополнения из репозитория успешно установлены");
-        }
-        catch (Exception ex)
-        {
-            ConsoleHelper.WriteError($"Ошибка установки из GitHub: {ex.Message}");
-        }
-    }
-
-    public void RemoveExtension(string name)
-    {
-        var extension = _extensions.FirstOrDefault(e => e.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
-        if (extension == null)
-        {
-            ConsoleHelper.WriteError($"Дополнение '{name}' не найдено");
-            return;
-        }
-
-        try
-        {
-            if (File.Exists(extension.InstallPath))
-            {
-                File.Delete(extension.InstallPath);
-            }
-
-            var disabledPath = extension.InstallPath + ".disable";
-            if (File.Exists(disabledPath))
-            {
-                File.Delete(disabledPath);
-            }
-
-            _extensions.Remove(extension);
-            SaveMetadata();
-
-            ConsoleHelper.WriteResponse($"Дополнение '{name}' успешно удалено");
-        }
-        catch (Exception ex)
-        {
-            ConsoleHelper.WriteError($"Ошибка удаления дополнения: {ex.Message}");
-        }
-    }
-
-    public async Task UpdateExtensionAsync(string name)
-    {
-        var extension = _extensions.FirstOrDefault(e => e.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
-        if (extension == null)
-        {
-            ConsoleHelper.WriteError($"Дополнение '{name}' не найдено");
-            return;
-        }
-
-        if (extension.Source != "github")
-        {
-            ConsoleHelper.WriteError("Обновление доступно только для дополнений, установленных из GitHub");
-            return;
-        }
-
-        try
-        {
-            ConsoleHelper.WriteResponse($"Обновление дополнения '{name}' из GitHub...");
-
-            if (File.Exists(extension.InstallPath))
-            {
-                File.Delete(extension.InstallPath);
-            }
-
-            await InstallFromGitHubAsync(extension.OriginalUrl);
-
-            ConsoleHelper.WriteResponse($"Дополнение '{name}' успешно обновлено");
-        }
-        catch (Exception ex)
-        {
-            ConsoleHelper.WriteError($"Ошибка обновления дополнения: {ex.Message}");
-        }
-    }
-
-    private class GitHubContent
-    {
-        public string Name { get; set; }
-        public string Path { get; set; }
-        public string Type { get; set; }
-        public string DownloadUrl { get; set; }
     }
 }
 
@@ -607,9 +485,9 @@ public class CommandManager
         RegisterCommand(new UpdateCommand());
         RegisterCommand(new NewCommand(this));
         RegisterCommand(new DebugCommand(this));
-
-        var extensionManager = new ExtensionManager(_extensionsPath);
-        RegisterCommand(new ExtensionsCommand(this, extensionManager));
+        RegisterCommand(new EnableCommand(this));
+        RegisterCommand(new DisableCommand(this));
+        RegisterCommand(new ImportCommand(this));
     }
 
     private async Task LoadExternalCommandsAsync()
@@ -777,7 +655,7 @@ public class CommandManager
     private class HelpCommand : ICommand
     {
         private readonly CommandManager _manager;
-        private readonly HashSet<string> _builtInCommands = new() { "help", "list", "reload", "clear", "restart", "time", "update", "new", "extensions", "debug" };
+        private readonly HashSet<string> _builtInCommands = new() { "help", "list", "reload", "clear", "restart", "time", "update", "new", "debug", "enable", "disable", "import" };
 
         public HelpCommand(CommandManager manager) => _manager = manager;
         public string Name => "help";
@@ -871,7 +749,7 @@ public class CommandManager
                 {
                     response.AppendLine($"- {Path.GetFileNameWithoutExtension(file)}");
                 }
-                response.AppendLine("\nДля включения используйте: extensions enable <имя_команды>");
+                response.AppendLine("\nДля включения используйте: enable <имя_команды>");
             }
 
             ConsoleHelper.WriteResponse(response.ToString().TrimEnd());
@@ -1070,347 +948,64 @@ new {char.ToUpper(commandName[0]) + commandName.Substring(1)}Command()";
         }
     }
 
-    private class ExtensionsCommand : ICommand
+    private class EnableCommand : ICommand
     {
         private readonly CommandManager _manager;
         private readonly ExtensionManager _extensionManager;
 
-        public ExtensionsCommand(CommandManager manager, ExtensionManager extensionManager)
+        public EnableCommand(CommandManager manager)
         {
             _manager = manager;
-            _extensionManager = extensionManager;
+            _extensionManager = new ExtensionManager(manager._extensionsPath);
         }
 
-        public string Name => "extensions";
-        public string Description => "Управление дополнениями";
-        public IEnumerable<string> Aliases => new[] { "ext", "addons" };
+        public string Name => "enable";
+        public string Description => "Включает отключенное дополнение";
+        public IEnumerable<string> Aliases => Enumerable.Empty<string>();
         public string Author => "System";
         public string Version => "1.0";
-        public string? UsageExample => "extensions list\nextensions install https://example.com/extension.csx\nextensions remove myextension";
+        public string? UsageExample => "enable mycommand";
 
         public async Task ExecuteAsync(string[] args)
         {
             if (args.Length == 0)
             {
-                ConsoleHelper.WriteResponse("Использование:\n" +
-                    "extensions list - список дополнений\n" +
-                    "extensions install <url> - установка дополнения\n" +
-                    "extensions remove <name> - удаление дополнения\n" +
-                    "extensions update <name> - обновление дополнения\n" +
-                    "extensions enable <name> - включение дополнения\n" +
-                    "extensions disable <name> - отключение дополнения");
+                ConsoleHelper.WriteError("Укажите имя команды или файла дополнения для включения (например: enable mycommand или enable myextension.csx.disable)");
                 return;
             }
 
-            var subCommand = args[0].ToLowerInvariant();
-            var subArgs = args.Skip(1).ToArray();
-
-            switch (subCommand)
-            {
-                case "list":
-                    await ListExtensionsAsync();
-                    break;
-                case "install":
-                    await InstallExtensionAsync(subArgs);
-                    break;
-                case "remove":
-                case "delete":
-                    RemoveExtension(subArgs);
-                    break;
-                case "update":
-                    await UpdateExtensionAsync(subArgs);
-                    break;
-                case "enable":
-                    await EnableExtensionAsync(subArgs);
-                    break;
-                case "disable":
-                    await DisableExtensionAsync(subArgs);
-                    break;
-                default:
-                    ConsoleHelper.WriteError($"Неизвестная подкоманда: {subCommand}");
-                    break;
-            }
-        }
-
-        private async Task ListExtensionsAsync()
-        {
-            var extensions = _extensionManager.GetExtensions().ToList();
-            var response = new StringBuilder();
-
-            if (!extensions.Any())
-            {
-                response.AppendLine("Установленные дополнения не найдены");
-            }
-            else
-            {
-                response.AppendLine("Установленные дополнения (с метаданными):");
-                foreach (var ext in extensions)
-                {
-                    var status = File.Exists(ext.InstallPath) ? "включено" :
-                               File.Exists(ext.InstallPath + ".disable") ? "отключено" : "файл отсутствует";
-
-                    response.AppendLine($"- {Path.GetFileName(ext.InstallPath)} ({status})");
-                    response.AppendLine($"  Команда: {ext.Name}");
-                    response.AppendLine($"  Источник: {GetSourceDescription(ext)}");
-                    response.AppendLine($"  Автор: {ext.Author}, Версия: {ext.Version}");
-                    response.AppendLine($"  Установлен: {ext.InstallDate:yyyy-MM-dd}");
-                    response.AppendLine();
-                }
-            }
-
-            // Получаем все файлы дополнений (включая отключенные)
-            var allExtensionFiles = Directory.GetFiles(_manager._extensionsPath, "*.csx*")
-                .Where(f => f.EndsWith(".csx") || f.EndsWith(".csx.disable"))
-                .ToList();
-
-            var filesWithoutMetadata = allExtensionFiles
-                .Where(f => !extensions.Any(e =>
-                    e.InstallPath.Equals(f, StringComparison.OrdinalIgnoreCase) ||
-                    (e.InstallPath + ".disable").Equals(f, StringComparison.OrdinalIgnoreCase)))
-                .ToList();
-
-            if (filesWithoutMetadata.Any())
-            {
-                response.AppendLine("Локальные дополнения (без метаданных):");
-                foreach (var file in filesWithoutMetadata)
-                {
-                    var status = file.EndsWith(".disable") ? "отключено" : "включено";
-                    var fileName = Path.GetFileName(file);
-                    response.AppendLine($"- {fileName} ({status})");
-
-                    // Пытаемся определить имя команды из содержимого файла
-                    var commandName = await TryGetCommandNameFromFile(file);
-                    if (!string.IsNullOrEmpty(commandName))
-                    {
-                        response.AppendLine($"  Команда: {commandName}");
-                    }
-                }
-            }
-
-            ConsoleHelper.WriteResponse(response.ToString().TrimEnd());
-        }
-
-        private async Task<string> TryGetCommandNameFromFile(string filePath)
-        {
-            try
-            {
-                var content = await File.ReadAllTextAsync(filePath);
-                var lines = content.Split('\n');
-
-                // Ищем строку с объявлением Name в файле
-                var nameLine = lines.FirstOrDefault(l => l.Contains("Name =>"));
-                if (nameLine != null)
-                {
-                    var start = nameLine.IndexOf('"') + 1;
-                    var end = nameLine.LastIndexOf('"');
-                    if (start > 0 && end > start)
-                    {
-                        return nameLine.Substring(start, end - start);
-                    }
-                }
-            }
-            catch
-            {
-                // В случае ошибки просто игнорируем
-            }
-            return null;
-        }
-
-        private string GetSourceDescription(ExtensionMetadata ext)
-        {
-            return ext.Source switch
-            {
-                "github" => $"GitHub: {ext.OriginalUrl}",
-                "url" => $"URL: {ext.OriginalUrl}",
-                _ => "Локальная установка"
-            };
-        }
-
-        private async Task InstallExtensionAsync(string[] args)
-        {
-            if (args.Length == 0)
-            {
-                ConsoleHelper.WriteError("Укажите URL для установки (например: extensions install https://example.com/extension.csx)");
-                return;
-            }
-
-            var url = args[0];
-            if (url.Contains("github.com"))
-            {
-                await _extensionManager.InstallFromGitHubAsync(url);
-            }
-            else
-            {
-                await _extensionManager.InstallFromUrlAsync(url);
-            }
-        }
-
-        private void RemoveExtension(string[] args)
-        {
-            if (args.Length == 0)
-            {
-                ConsoleHelper.WriteError("Укажите имя дополнения для удаления (например: extensions remove myextension)");
-                return;
-            }
-
-            _extensionManager.RemoveExtension(args[0]);
-        }
-
-        private async Task UpdateExtensionAsync(string[] args)
-        {
-            if (args.Length == 0)
-            {
-                ConsoleHelper.WriteError("Укажите имя дополнения для обновления (например: extensions update myextension)");
-                return;
-            }
-
-            await _extensionManager.UpdateExtensionAsync(args[0]);
-        }
-
-        private async Task EnableExtensionAsync(string[] args)
-        {
-            if (args.Length == 0)
-            {
-                ConsoleHelper.WriteError("Укажите имя команды или файла дополнения для включения (например: extensions enable mycommand или extensions enable myextension.csx.disable)");
-                return;
-            }
-
-            var input = args[0];
-            string disabledFile;
-            string enabledFile;
-
-            // Если ввод заканчивается на .csx.disable - работаем с именем файла
-            if (input.EndsWith(".csx.disable", StringComparison.OrdinalIgnoreCase))
-            {
-                disabledFile = Path.Combine(_manager._extensionsPath, input);
-                if (!File.Exists(disabledFile))
-                {
-                    ConsoleHelper.WriteError($"Файл '{input}' не найден");
-                    return;
-                }
-
-                enabledFile = Path.Combine(_manager._extensionsPath, Path.GetFileNameWithoutExtension(input));
-            }
-            else
-            {
-                // Работаем с именем команды
-                var commandName = input.ToLowerInvariant();
-                var disabledFiles = Directory.GetFiles(_manager._extensionsPath, "*.csx.disable")
-                    .Where(f => Path.GetFileNameWithoutExtension(Path.GetFileNameWithoutExtension(f))
-                        .Equals(commandName, StringComparison.OrdinalIgnoreCase))
-                    .ToList();
-
-                if (!disabledFiles.Any())
-                {
-                    // Проверяем, может быть ввели имя файла без .disable
-                    var possibleFile = Path.Combine(_manager._extensionsPath, commandName + ".csx.disable");
-                    if (File.Exists(possibleFile))
-                    {
-                        disabledFiles.Add(possibleFile);
-                    }
-                    else
-                    {
-                        ConsoleHelper.WriteError($"Не найдено отключенных дополнений для команды/файла '{commandName}'");
-                        return;
-                    }
-                }
-
-                if (disabledFiles.Count > 1)
-                {
-                    ConsoleHelper.WriteResponse($"Найдено несколько отключенных дополнений для команды '{commandName}':");
-                    foreach (var file in disabledFiles)
-                    {
-                        ConsoleHelper.WriteResponse($"- {Path.GetFileName(file)}");
-                    }
-                    ConsoleHelper.WriteError("Уточните имя файла для включения");
-                    return;
-                }
-
-                disabledFile = disabledFiles.First();
-                enabledFile = Path.Combine(_manager._extensionsPath, Path.GetFileNameWithoutExtension(disabledFile));
-            }
-
-            File.Move(disabledFile, enabledFile);
-            ConsoleHelper.WriteResponse($"Дополнение '{Path.GetFileName(enabledFile)}' включено");
+            await _extensionManager.EnableExtensionAsync(args[0]);
             await _manager.LoadCommandsAsync();
         }
+    }
 
-        private async Task DisableExtensionAsync(string[] args)
+    private class DisableCommand : ICommand
+    {
+        private readonly CommandManager _manager;
+        private readonly ExtensionManager _extensionManager;
+
+        public DisableCommand(CommandManager manager)
+        {
+            _manager = manager;
+            _extensionManager = new ExtensionManager(manager._extensionsPath);
+        }
+
+        public string Name => "disable";
+        public string Description => "Отключает дополнение";
+        public IEnumerable<string> Aliases => Enumerable.Empty<string>();
+        public string Author => "System";
+        public string Version => "1.0";
+        public string? UsageExample => "disable mycommand";
+
+        public async Task ExecuteAsync(string[] args)
         {
             if (args.Length == 0)
             {
-                ConsoleHelper.WriteError("Укажите имя команды или файла дополнения для отключения (например: extensions disable mycommand или extensions disable myextension.csx)");
+                ConsoleHelper.WriteError("Укажите имя команды или файла дополнения для отключения (например: disable mycommand или disable myextension.csx)");
                 return;
             }
 
-            var input = args[0];
-            string sourceFile;
-            string disabledFile;
-
-            // Если ввод заканчивается на .csx - работаем с именем файла
-            if (input.EndsWith(".csx", StringComparison.OrdinalIgnoreCase))
-            {
-                sourceFile = Path.Combine(_manager._extensionsPath, input);
-                if (!File.Exists(sourceFile))
-                {
-                    ConsoleHelper.WriteError($"Файл '{input}' не найден");
-                    return;
-                }
-
-                disabledFile = sourceFile + ".disable";
-            }
-            else
-            {
-                // Работаем с именем команды
-                var commandName = input.ToLowerInvariant();
-                var command = _manager.GetCommand(commandName);
-
-                if (command == null)
-                {
-                    // Проверяем, может быть ввели имя файла без .csx
-                    var possibleFile = Path.Combine(_manager._extensionsPath, commandName + ".csx");
-                    if (File.Exists(possibleFile))
-                    {
-                        sourceFile = possibleFile;
-                        disabledFile = possibleFile + ".disable";
-                        File.Move(sourceFile, disabledFile);
-                        ConsoleHelper.WriteResponse($"Дополнение '{Path.GetFileName(sourceFile)}' отключено");
-                        await _manager.LoadCommandsAsync();
-                        return;
-                    }
-
-                    ConsoleHelper.WriteError($"Команда/файл '{commandName}' не найдена");
-                    return;
-                }
-
-                var sourceFiles = Directory.GetFiles(_manager._extensionsPath, "*.csx")
-                    .Where(f => Path.GetFileNameWithoutExtension(f)
-                        .Equals(commandName, StringComparison.OrdinalIgnoreCase))
-                    .ToList();
-
-                if (!sourceFiles.Any())
-                {
-                    ConsoleHelper.WriteError($"Не найдено файлов дополнений для команды '{commandName}'");
-                    return;
-                }
-
-                if (sourceFiles.Count > 1)
-                {
-                    ConsoleHelper.WriteResponse($"Найдено несколько дополнений для команды '{commandName}':");
-                    foreach (var file in sourceFiles)
-                    {
-                        ConsoleHelper.WriteResponse($"- {Path.GetFileName(file)}");
-                    }
-                    ConsoleHelper.WriteError("Уточните имя файла для отключения");
-                    return;
-                }
-
-                sourceFile = sourceFiles.First();
-                disabledFile = sourceFile + ".disable";
-            }
-
-            File.Move(sourceFile, disabledFile);
-            ConsoleHelper.WriteResponse($"Дополнение '{Path.GetFileName(sourceFile)}' отключено");
+            await _extensionManager.DisableExtensionAsync(args[0]);
             await _manager.LoadCommandsAsync();
         }
     }
@@ -1470,14 +1065,13 @@ new {char.ToUpper(commandName[0]) + commandName.Substring(1)}Command()";
             {
                 if (args[i] == "--args" && i + 1 < args.Length)
                 {
-                    // Обрабатываем аргументы в кавычках
                     var argValue = args[i + 1];
                     if (argValue.StartsWith("\"") && argValue.EndsWith("\""))
                     {
                         argValue = argValue.Substring(1, argValue.Length - 2);
                     }
                     result.Add(argValue);
-                    i++; // Пропускаем следующий аргумент, так как мы его уже обработали
+                    i++;
                 }
                 else
                 {
@@ -1485,6 +1079,38 @@ new {char.ToUpper(commandName[0]) + commandName.Substring(1)}Command()";
                 }
             }
             return result.ToArray();
+        }
+    }
+
+    private class ImportCommand : ICommand
+    {
+        private readonly CommandManager _manager;
+        private readonly ExtensionManager _extensionManager;
+
+        public ImportCommand(CommandManager manager)
+        {
+            _manager = manager;
+            _extensionManager = new ExtensionManager(manager._extensionsPath);
+        }
+
+        public string Name => "import";
+        public string Description => "Загружает и устанавливает дополнение из указанного URL";
+        public IEnumerable<string> Aliases => Enumerable.Empty<string>();
+        public string Author => "System";
+        public string Version => "1.0";
+        public string? UsageExample => "import https://example.com/extension.csx";
+
+        public async Task ExecuteAsync(string[] args)
+        {
+            if (args.Length == 0)
+            {
+                ConsoleHelper.WriteError("Укажите URL дополнения для загрузки (например: import https://example.com/extension.csx)");
+                return;
+            }
+
+            var url = args[0];
+            await _extensionManager.ImportFromUrlAsync(url);
+            await _manager.LoadCommandsAsync();
         }
     }
 }
@@ -1496,7 +1122,6 @@ public class CommandGlobals
     public string ReadLine() => Console.ReadLine();
     public string Version => "1.0";
 
-    // Добавляем методы для отладки
     public void DebugLog(string message) => ConsoleHelper.WriteDebug(message);
     public void DebugVar(string name, object value) => ConsoleHelper.WriteDebug($"Переменная: {name} = {JsonConvert.SerializeObject(value)}");
 
