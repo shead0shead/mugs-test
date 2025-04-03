@@ -182,21 +182,18 @@ public static class Localization
             // Language command
             ["language_description"] = "Sets or shows the current language",
             ["current_language"] = "Current language: {0}",
-            ["available_languages"] = "Available languages",
+            ["available_languages"] = "Available languages: {0}",
             ["language_changed"] = "Language changed to {0}",
             ["invalid_language"] = "Invalid language code: {0}",
             ["language_usage"] = "language en\nlanguage ru",
 
             // List command
             ["list_description"] = "Lists all available commands and their status",
+            ["available_commands"] = "Available commands:",
             ["disabled_extensions"] = "Disabled extensions:",
+            ["example"] = "Usage example",
             ["enable_usage"] = "To enable use: enable <command_name>",
-            ["aliases"] = "Aliases",
-            ["version"] = "Version",
-            ["author"] = "Author",
-            ["verified"] = "Verified by developers",
-            ["example"] = "Example",
-            ["available_commands"] = "Available commands (main and aliases):",
+            ["verified"] = "Verified",
 
             // Reload command
             ["reload_description"] = "Reloads all commands from files",
@@ -225,7 +222,6 @@ public static class Localization
             ["installing_update"] = "Installing update...",
             ["finishing_update"] = "Finishing installation...",
             ["update_failed"] = "Error installing update: {0}",
-            ["update_usage"] = "update install",
 
             // New command
             ["new_description"] = "Creates a new extension script template in Extensions folder",
@@ -233,7 +229,6 @@ public static class Localization
             ["file_exists"] = "File {0} already exists!",
             ["template_created"] = "Command template created: {0}",
             ["reload_usage"] = "To use execute: reload",
-            ["new_usage"] = "new mycommand",
 
             // Enable/Disable commands
             ["enable_description"] = "Enables a disabled extension",
@@ -246,8 +241,6 @@ public static class Localization
             ["extension_enabled"] = "Extension '{0}' enabled",
             ["extension_disabled"] = "Extension '{0}' disabled",
             ["command_not_found_disable"] = "Command/file '{0}' not found",
-            ["enable_usage"] = "enable mycommand",
-            ["disable_usage"] = "disable mycommand",
 
             // Import command
             ["import_description"] = "Downloads and installs an extension from the specified URL",
@@ -255,7 +248,6 @@ public static class Localization
             ["downloading_extension"] = "Downloading extension from URL: {0}",
             ["extension_downloaded"] = "Extension successfully downloaded: {0}",
             ["download_error"] = "Error downloading extension: {0}",
-            ["import_usage"] = "import https://example.com/extension.csx",
 
             // Debug command
             ["debug_description"] = "Runs a command in debug mode",
@@ -264,22 +256,28 @@ public static class Localization
             ["debug_vars"] = "Variables: args = {0}",
             ["debug_completed"] = "Command completed in {0} ms",
             ["debug_error"] = "Execution error: {0}: {1}",
-            ["debug_usage"] = "debug mycommand --args \"test\"",
 
-            // Help command 2
-            ["command"] = "Команда",
-            ["description"] = "Описание",
-            ["aliases"] = "Алиасы",
-            ["author"] = "Автор",
-            ["version"] = "Версия",
-            ["usage_examples"] = "Примеры использования",
-            ["verification"] = "Проверка",
-            ["verified_safe"] = "Эта команда проверена и безопасна",
+            // Command details
+            ["command"] = "Command",
+            ["description"] = "Description",
+            ["aliases"] = "Aliases",
+            ["author"] = "Author",
+            ["version"] = "Version",
+            ["usage_examples"] = "Usage examples",
+            ["verification"] = "Verification",
+            ["verified_safe"] = "This command is verified and safe",
 
-            // Verified extensions
-            ["verified_load_error"] = "Error loading verified hashes: {0}",
+            // Script command
+            ["script_description"] = "Executes commands from a text file",
+            ["missing_script_file"] = "Specify script file to execute (e.g.: script commands.txt)",
+            ["script_file_not_found"] = "Script file '{0}' not found",
+            ["executing_command"] = "Executing: {0}",
+            ["command_output"] = "Command output: {0}",
+            ["script_completed"] = "Script execution completed",
+            ["script_error"] = "Script execution error: {0}",
 
             // Settings
+            ["verified_load_error"] = "Error loading verified hashes: {0}",
             ["settings_error"] = "Error saving settings: {0}"
         };
     }
@@ -837,6 +835,7 @@ public class CommandManager
         RegisterCommand(new DisableCommand(this));
         RegisterCommand(new ImportCommand(this));
         RegisterCommand(new LanguageCommand());
+        RegisterCommand(new ScriptCommand());
     }
 
     private async Task LoadExternalCommandsAsync()
@@ -1008,7 +1007,7 @@ public class CommandManager
     {
         "help", "list", "reload", "clear", "restart",
         "time", "update", "new", "debug", "enable",
-        "disable", "import", "language"
+        "disable", "import", "language", "script"
     };
 
         public HelpCommand(CommandManager manager) => _manager = manager;
@@ -1309,7 +1308,7 @@ public class CommandManager
         public IEnumerable<string> Aliases => Enumerable.Empty<string>();
         public string Author => "System";
         public string Version => "1.0";
-        public string? UsageExample => Localization.GetString("update_usage");
+        public string? UsageExample => "update install";
 
         public async Task ExecuteAsync(string[] args)
         {
@@ -1343,7 +1342,7 @@ public class CommandManager
         public IEnumerable<string> Aliases => new[] { "template" };
         public string Author => "System";
         public string Version => "1.0";
-        public string? UsageExample => Localization.GetString("new_usage");
+        public string? UsageExample => "new mycommand";
 
         public Task ExecuteAsync(string[] args)
         {
@@ -1415,7 +1414,7 @@ new {char.ToUpper(commandName[0]) + commandName.Substring(1)}Command()";
         public IEnumerable<string> Aliases => Enumerable.Empty<string>();
         public string Author => "System";
         public string Version => "1.0";
-        public string? UsageExample => Localization.GetString("enable_usage");
+        public string? UsageExample => "enable mycommand";
 
         public async Task ExecuteAsync(string[] args)
         {
@@ -1446,7 +1445,7 @@ new {char.ToUpper(commandName[0]) + commandName.Substring(1)}Command()";
         public IEnumerable<string> Aliases => Enumerable.Empty<string>();
         public string Author => "System";
         public string Version => "1.0";
-        public string? UsageExample => Localization.GetString("disable_usage");
+        public string? UsageExample => "disable mycommand";
 
         public async Task ExecuteAsync(string[] args)
         {
@@ -1471,7 +1470,7 @@ new {char.ToUpper(commandName[0]) + commandName.Substring(1)}Command()";
         public IEnumerable<string> Aliases => Enumerable.Empty<string>();
         public string Author => "System";
         public string Version => "1.0";
-        public string? UsageExample => Localization.GetString("debug_usage");
+        public string? UsageExample => "debug mycommand --args \"test\"";
 
         public async Task ExecuteAsync(string[] args)
         {
@@ -1549,7 +1548,7 @@ new {char.ToUpper(commandName[0]) + commandName.Substring(1)}Command()";
         public IEnumerable<string> Aliases => Enumerable.Empty<string>();
         public string Author => "System";
         public string Version => "1.0";
-        public string? UsageExample => Localization.GetString("import_usage");
+        public string? UsageExample => "import https://example.com/extension.csx";
 
         public async Task ExecuteAsync(string[] args)
         {
@@ -1572,7 +1571,7 @@ new {char.ToUpper(commandName[0]) + commandName.Substring(1)}Command()";
         public IEnumerable<string> Aliases => new[] { "lang" };
         public string Author => "System";
         public string Version => "1.0";
-        public string? UsageExample => Localization.GetString("language_usage");
+        public string? UsageExample => "language en, language ru";
 
         public Task ExecuteAsync(string[] args)
         {
@@ -1610,6 +1609,55 @@ new {char.ToUpper(commandName[0]) + commandName.Substring(1)}Command()";
             return Task.CompletedTask;
         }
     }
+
+    private class ScriptCommand : ICommand
+    {
+        public string Name => "script";
+        public string Description => Localization.GetString("script_description");
+        public IEnumerable<string> Aliases => new[] { "batch", "run" };
+        public string Author => "System";
+        public string Version => "1.0";
+        public string? UsageExample => "script commands.txt";
+
+        public async Task ExecuteAsync(string[] args)
+        {
+            if (args.Length == 0)
+            {
+                ConsoleHelper.WriteError("missing_script_file");
+                return;
+            }
+
+            var fileName = args[0];
+            if (!File.Exists(fileName))
+            {
+                ConsoleHelper.WriteError("script_file_not_found", fileName);
+                return;
+            }
+
+            try
+            {
+                var commands = await File.ReadAllLinesAsync(fileName);
+                foreach (var command in commands)
+                {
+                    if (string.IsNullOrWhiteSpace(command)) continue;
+                    if (command.TrimStart().StartsWith("#")) continue;
+
+                    ConsoleHelper.WriteResponse("executing_command", command);
+                    var parts = command.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                    var cmdName = parts[0];
+                    var cmdArgs = parts.Length > 1 ? parts.Skip(1).ToArray() : Array.Empty<string>();
+
+                    ConsoleHelper.WriteResponse("command_output", $"Executing: {command}");
+                    await Task.Delay(100);
+                }
+                ConsoleHelper.WriteResponse("script_completed");
+            }
+            catch (Exception ex)
+            {
+                ConsoleHelper.WriteError("script_error", ex.Message);
+            }
+        }
+    }
 }
 
 public class CommandGlobals
@@ -1632,10 +1680,10 @@ public class Program
     public static async Task Main(string[] args)
     {
         AppSettings.Initialize();
-        Console.Title = Localization.GetString("app_title");
         Console.OutputEncoding = System.Text.Encoding.UTF8;
         ConsoleHelper.Initialize();
         Localization.Initialize();
+        Console.Title = Localization.GetString("app_title");
 
         if (args.All(a => a != "--updated"))
         {
