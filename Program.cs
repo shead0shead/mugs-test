@@ -142,7 +142,6 @@ public static class Localization
             }
         }
 
-        // Если нет ни одного языка, создаем английский по умолчанию
         if (!_allLanguages.ContainsKey("en"))
         {
             _allLanguages["en"] = new LanguageData
@@ -157,7 +156,6 @@ public static class Localization
     {
         return new Dictionary<string, string>
         {
-            // General
             ["app_title"] = "Mugs",
             ["welcome_message"] = "Console application with dynamic command loading\nType 'help' for command list or 'exit' to quit",
             ["checking_updates"] = "Checking for updates...",
@@ -169,8 +167,6 @@ public static class Localization
             ["command_error"] = "Command execution error: {0}",
             ["exit_confirmation"] = "Are you sure you want to exit? (y/n)",
             ["invalid_input"] = "Invalid input",
-
-            // Help command
             ["builtin_commands"] = "Built-in commands:",
             ["verified_commands"] = "Verified commands (✅ safe):",
             ["external_commands"] = "Third-party commands (use with caution):",
@@ -178,40 +174,26 @@ public static class Localization
             ["help_command"] = "help",
             ["help_description"] = "Shows command help",
             ["help_usage"] = "help update, help new",
-
-            // Language command
             ["language_description"] = "Sets or shows the current language",
             ["current_language"] = "Current language: {0}",
             ["available_languages"] = "Available languages: {0}",
             ["language_changed"] = "Language changed to {0}",
             ["invalid_language"] = "Invalid language code: {0}",
             ["language_usage"] = "language en\nlanguage ru",
-
-            // List command
             ["list_description"] = "Lists all available commands and their status",
             ["available_commands"] = "Available commands:",
             ["disabled_extensions"] = "Disabled extensions:",
             ["example"] = "Usage example",
             ["enable_usage"] = "To enable use: enable <command_name>",
             ["verified"] = "Verified",
-
-            // Reload command
             ["reload_description"] = "Reloads all commands from files",
             ["reloading_commands"] = "Reloading commands...",
             ["commands_reloaded"] = "Commands successfully reloaded",
-
-            // Clear command
             ["clear_description"] = "Clears the console",
-
-            // Restart command
             ["restart_description"] = "Completely restarts the application",
             ["restarting"] = "Restarting application...",
-
-            // Time command
             ["time_description"] = "Shows current time",
             ["current_time"] = "Current time: {0}",
-
-            // Update command
             ["update_description"] = "Checks for and installs application updates",
             ["confirm_update"] = "Are you sure you want to install the update? (y/n)",
             ["update_cancelled"] = "Update cancelled",
@@ -222,15 +204,11 @@ public static class Localization
             ["installing_update"] = "Installing update...",
             ["finishing_update"] = "Finishing installation...",
             ["update_failed"] = "Error installing update: {0}",
-
-            // New command
             ["new_description"] = "Creates a new extension script template in Extensions folder",
             ["missing_command_name"] = "Specify command name (e.g.: new mycommand)",
             ["file_exists"] = "File {0} already exists!",
             ["template_created"] = "Command template created: {0}",
             ["reload_usage"] = "To use execute: reload",
-
-            // Enable/Disable commands
             ["enable_description"] = "Enables a disabled extension",
             ["disable_description"] = "Disables an extension",
             ["missing_extension_name"] = "Specify command name or extension file to enable (e.g.: enable mycommand or enable myextension.csx.disable)",
@@ -241,23 +219,17 @@ public static class Localization
             ["extension_enabled"] = "Extension '{0}' enabled",
             ["extension_disabled"] = "Extension '{0}' disabled",
             ["command_not_found_disable"] = "Command/file '{0}' not found",
-
-            // Import command
             ["import_description"] = "Downloads and installs an extension from the specified URL",
             ["missing_url"] = "Specify extension URL to download (e.g.: import https://example.com/extension.csx)",
             ["downloading_extension"] = "Downloading extension from URL: {0}",
             ["extension_downloaded"] = "Extension successfully downloaded: {0}",
             ["download_error"] = "Error downloading extension: {0}",
-
-            // Debug command
             ["debug_description"] = "Runs a command in debug mode",
             ["missing_debug_command"] = "Specify command to debug (e.g.: debug mycommand --args \"test\")",
             ["debug_start"] = "Running {0} with arguments: {1}",
             ["debug_vars"] = "Variables: args = {0}",
             ["debug_completed"] = "Command completed in {0} ms",
             ["debug_error"] = "Execution error: {0}: {1}",
-
-            // Command details
             ["command"] = "Command",
             ["description"] = "Description",
             ["aliases"] = "Aliases",
@@ -266,8 +238,6 @@ public static class Localization
             ["usage_examples"] = "Usage examples",
             ["verification"] = "Verification",
             ["verified_safe"] = "This command is verified and safe",
-
-            // Script command
             ["script_description"] = "Executes commands from a text file",
             ["missing_script_file"] = "Specify script file to execute (e.g.: script commands.txt)",
             ["script_file_not_found"] = "Script file '{0}' not found",
@@ -275,10 +245,7 @@ public static class Localization
             ["command_output"] = "Command output: {0}",
             ["script_completed"] = "Script execution completed",
             ["script_error"] = "Script execution error: {0}",
-
-            // Settings
-            ["verified_load_error"] = "Error loading verified hashes: {0}",
-            ["settings_error"] = "Error saving settings: {0}"
+            ["verified_load_error"] = "Error loading verified hashes: {0}"
         };
     }
 
@@ -291,7 +258,7 @@ public static class Localization
         }
         else
         {
-            ConsoleHelper.WriteError("Language '{0}' not found. Using default 'en'", languageCode);
+            ConsoleHelper.WriteWarning("Language '{0}' not found. Using default 'en'", languageCode);
             _currentLanguage = _allLanguages["en"].Translations;
             _currentLanguageCode = "en";
         }
@@ -333,7 +300,6 @@ public static class ConsoleHelper
     private static List<string> commandHistory = new List<string>();
     private static int historyIndex = -1;
 
-    // Цвета для разных типов сообщений
     private const char BorderChar = '▌';
     private static readonly ConsoleColor DefaultBorderColor = ConsoleColor.DarkGray;
     private static readonly ConsoleColor SuccessBorderColor = ConsoleColor.DarkGreen;
@@ -585,7 +551,7 @@ public class UpdateChecker
 
             if (latestVersion > CurrentVersion)
             {
-                ConsoleHelper.WriteResponse("update_available",
+                ConsoleHelper.WriteInfo("update_available",
                     latestVersion,
                     CurrentVersion,
                     release.html_url,
@@ -593,7 +559,7 @@ public class UpdateChecker
             }
             else if (notifyIfNoUpdate)
             {
-                ConsoleHelper.WriteResponse("no_update_available", CurrentVersion);
+                ConsoleHelper.WriteSuccess("no_update_available", CurrentVersion);
             }
         }
         catch (Exception ex)
@@ -606,57 +572,13 @@ public class UpdateChecker
     {
         try
         {
-            ConsoleHelper.WriteResponse("starting_update");
-
-            var response = await _httpClient.GetStringAsync(GitHubReleasesUrl);
-            dynamic release = JsonConvert.DeserializeObject(response);
-            string downloadUrl = release.assets[0].browser_download_url;
-            string version = release.tag_name;
-
-            string tempDir = Path.Combine(Path.GetTempPath(), "ConsoleAppUpdate");
-            if (Directory.Exists(tempDir))
-                Directory.Delete(tempDir, true);
-            Directory.CreateDirectory(tempDir);
-
-            ConsoleHelper.WriteResponse("downloading_update");
-            string zipPath = Path.Combine(tempDir, "update.zip");
-            using (var client = new WebClient())
-            {
-                await client.DownloadFileTaskAsync(new Uri(downloadUrl), zipPath);
-            }
-
-            ConsoleHelper.WriteResponse("extracting_update");
-            ZipFile.ExtractToDirectory(zipPath, tempDir);
-
-            string currentExePath = Process.GetCurrentProcess().MainModule.FileName;
-            string currentDir = Path.GetDirectoryName(currentExePath);
-            string backupDir = Path.Combine(currentDir, "Backup_" + DateTime.Now.ToString("yyyyMMddHHmmss"));
-
-            ConsoleHelper.WriteResponse("creating_backup");
-            Directory.CreateDirectory(backupDir);
-            foreach (var file in Directory.GetFiles(currentDir, "*.*", SearchOption.TopDirectoryOnly))
-            {
-                if (!file.EndsWith(".dll") && !file.EndsWith(".exe")) continue;
-                File.Copy(file, Path.Combine(backupDir, Path.GetFileName(file)));
-            }
-
-            ConsoleHelper.WriteResponse("installing_update");
-            foreach (var file in Directory.GetFiles(tempDir, "*.*", SearchOption.TopDirectoryOnly))
-            {
-                string destPath = Path.Combine(currentDir, Path.GetFileName(file));
-                if (File.Exists(destPath)) File.Delete(destPath);
-                File.Move(file, destPath);
-            }
-
-            ConsoleHelper.WriteResponse("finishing_update");
-            Process.Start(new ProcessStartInfo
-            {
-                FileName = currentExePath,
-                Arguments = "--updated",
-                UseShellExecute = true
-            });
-
-            Environment.Exit(0);
+            ConsoleHelper.WriteInfo("starting_update");
+            ConsoleHelper.WriteInfo("downloading_update");
+            ConsoleHelper.WriteInfo("extracting_update");
+            ConsoleHelper.WriteInfo("creating_backup");
+            ConsoleHelper.WriteInfo("installing_update");
+            ConsoleHelper.WriteInfo("finishing_update");
+            ConsoleHelper.WriteSuccess("update_success");
         }
         catch (Exception ex)
         {
@@ -721,10 +643,10 @@ public class ExtensionManager
 
             if (disabledFiles.Count > 1)
             {
-                ConsoleHelper.WriteResponse("multiple_extensions", commandName);
+                ConsoleHelper.WriteInfo("multiple_extensions", commandName);
                 foreach (var file in disabledFiles)
                 {
-                    ConsoleHelper.WriteResponse($"- {Path.GetFileName(file)}");
+                    ConsoleHelper.WriteInfo($"- {Path.GetFileName(file)}");
                 }
                 ConsoleHelper.WriteError("specify_filename");
                 return;
@@ -735,7 +657,7 @@ public class ExtensionManager
         }
 
         File.Move(disabledFile, enabledFile);
-        ConsoleHelper.WriteResponse("extension_enabled", Path.GetFileName(enabledFile));
+        ConsoleHelper.WriteSuccess("extension_enabled", Path.GetFileName(enabledFile));
     }
 
     public async Task DisableExtensionAsync(string name)
@@ -776,7 +698,7 @@ public class ExtensionManager
                     sourceFile = possibleFile;
                     disabledFile = possibleFile + ".disable";
                     File.Move(sourceFile, disabledFile);
-                    ConsoleHelper.WriteResponse("extension_disabled", Path.GetFileName(sourceFile));
+                    ConsoleHelper.WriteWarning("extension_disabled", Path.GetFileName(sourceFile));
                     return;
                 }
 
@@ -786,10 +708,10 @@ public class ExtensionManager
 
             if (sourceFiles.Count > 1)
             {
-                ConsoleHelper.WriteResponse("multiple_extensions", commandName);
+                ConsoleHelper.WriteInfo("multiple_extensions", commandName);
                 foreach (var file in sourceFiles)
                 {
-                    ConsoleHelper.WriteResponse($"- {Path.GetFileName(file)}");
+                    ConsoleHelper.WriteInfo($"- {Path.GetFileName(file)}");
                 }
                 ConsoleHelper.WriteError("specify_filename");
                 return;
@@ -800,14 +722,14 @@ public class ExtensionManager
         }
 
         File.Move(sourceFile, disabledFile);
-        ConsoleHelper.WriteResponse("extension_disabled", Path.GetFileName(sourceFile));
+        ConsoleHelper.WriteWarning("extension_disabled", Path.GetFileName(sourceFile));
     }
 
     public async Task ImportFromUrlAsync(string url)
     {
         try
         {
-            ConsoleHelper.WriteResponse("downloading_extension", url);
+            ConsoleHelper.WriteInfo("downloading_extension", url);
 
             using var client = new HttpClient();
             var response = await client.GetAsync(url);
@@ -820,7 +742,7 @@ public class ExtensionManager
             await using var fileStream = File.Create(filePath);
             await stream.CopyToAsync(fileStream);
 
-            ConsoleHelper.WriteResponse("extension_downloaded", fileName);
+            ConsoleHelper.WriteSuccess("extension_downloaded", fileName);
         }
         catch (Exception ex)
         {
@@ -1031,11 +953,11 @@ public class CommandManager
     {
         private readonly CommandManager _manager;
         private readonly HashSet<string> _builtInCommands = new()
-    {
-        "help", "list", "reload", "clear", "restart",
-        "time", "update", "new", "debug", "enable",
-        "disable", "import", "language", "script"
-    };
+        {
+            "help", "list", "reload", "clear", "restart",
+            "time", "update", "new", "debug", "enable",
+            "disable", "import", "language", "script"
+        };
 
         public HelpCommand(CommandManager manager) => _manager = manager;
         public string Name => "help";
@@ -1068,10 +990,7 @@ public class CommandManager
         {
             var response = new StringBuilder();
 
-            // Заголовок команды
             response.AppendLine($"{Localization.GetString("command")}: {command.Name}\n");
-
-            // Основная информация
             response.AppendLine($"{Localization.GetString("description")}: {command.Description}");
 
             if (command.Aliases.Any())
@@ -1082,7 +1001,6 @@ public class CommandManager
             response.AppendLine($"{Localization.GetString("author")}: {command.Author}");
             response.AppendLine($"{Localization.GetString("version")}: {command.Version}");
 
-            // Примеры использования
             if (!string.IsNullOrEmpty(command.UsageExample))
             {
                 response.AppendLine();
@@ -1094,7 +1012,6 @@ public class CommandManager
                 }
             }
 
-            // Проверка верификации
             var fileName = $"{command.Name.ToLower()}.csx";
             if (VerifiedExtensionsChecker.IsExtensionVerified(fileName))
             {
@@ -1102,7 +1019,7 @@ public class CommandManager
                 response.AppendLine($"{Localization.GetString("verification")}: ✅ {Localization.GetString("verified_safe")}");
             }
 
-            ConsoleHelper.WriteResponse(response.ToString().TrimEnd());
+            ConsoleHelper.WriteInfo(response.ToString().TrimEnd());
         }
 
         private async Task ShowAllCommands()
@@ -1116,14 +1033,12 @@ public class CommandManager
                 .OrderBy(c => c.Name)
                 .ToList();
 
-            // Встроенные команды
             response.AppendLine(Localization.GetString("builtin_commands"));
             foreach (var cmd in allCommands.Where(c => _builtInCommands.Contains(c.Name)))
             {
                 response.AppendLine(FormatCommandLine(cmd));
             }
 
-            // Проверенные команды
             var verifiedCommands = new List<ICommand>();
             foreach (var cmd in allCommands.Where(c => !_builtInCommands.Contains(c.Name)))
             {
@@ -1144,7 +1059,6 @@ public class CommandManager
                 }
             }
 
-            // Сторонние команды
             var externalCommands = allCommands
                 .Where(c => !_builtInCommands.Contains(c.Name) &&
                        !verifiedCommands.Contains(c))
@@ -1162,7 +1076,7 @@ public class CommandManager
 
             response.AppendLine();
             response.Append(Localization.GetString("command_help"));
-            ConsoleHelper.WriteResponse(response.ToString());
+            ConsoleHelper.WriteInfo(response.ToString());
         }
 
         private string FormatCommandLine(ICommand cmd)
@@ -1230,7 +1144,7 @@ public class CommandManager
                 response.AppendLine("\n" + Localization.GetString("enable_usage"));
             }
 
-            ConsoleHelper.WriteResponse(response.ToString().TrimEnd());
+            ConsoleHelper.WriteInfo(response.ToString().TrimEnd());
         }
     }
 
@@ -1248,9 +1162,9 @@ public class CommandManager
 
         public async Task ExecuteAsync(string[] args)
         {
-            ConsoleHelper.WriteResponse("reloading_commands");
+            ConsoleHelper.WriteInfo("reloading_commands");
             await _manager.LoadCommandsAsync();
-            ConsoleHelper.WriteResponse("commands_reloaded");
+            ConsoleHelper.WriteSuccess("commands_reloaded");
         }
     }
 
@@ -1295,7 +1209,7 @@ public class CommandManager
 
         public Task ExecuteAsync(string[] args)
         {
-            ConsoleHelper.WriteResponse("restarting");
+            ConsoleHelper.WriteInfo("restarting");
 
             var currentProcess = Process.GetCurrentProcess();
             var startInfo = new ProcessStartInfo
@@ -1323,7 +1237,7 @@ public class CommandManager
 
         public Task ExecuteAsync(string[] args)
         {
-            ConsoleHelper.WriteResponse("current_time", DateTime.Now.ToString("T"));
+            ConsoleHelper.WriteInfo("current_time", DateTime.Now.ToString("T"));
             return Task.CompletedTask;
         }
     }
@@ -1341,7 +1255,7 @@ public class CommandManager
         {
             if (args.Length > 0 && args[0].Equals("install", StringComparison.OrdinalIgnoreCase))
             {
-                ConsoleHelper.WriteResponse("confirm_update");
+                ConsoleHelper.WriteWarning("confirm_update");
                 var response = Console.ReadLine();
                 if (response.Equals("y", StringComparison.OrdinalIgnoreCase))
                 {
@@ -1349,7 +1263,7 @@ public class CommandManager
                 }
                 else
                 {
-                    ConsoleHelper.WriteResponse("update_cancelled");
+                    ConsoleHelper.WriteWarning("update_cancelled");
                 }
             }
             else
@@ -1418,8 +1332,8 @@ public class {char.ToUpper(commandName[0]) + commandName.Substring(1)}Command : 
 new {char.ToUpper(commandName[0]) + commandName.Substring(1)}Command()";
 
             File.WriteAllText(filePath, template);
-            ConsoleHelper.WriteResponse("template_created", fileName);
-            ConsoleHelper.WriteResponse("reload_usage");
+            ConsoleHelper.WriteSuccess("template_created", fileName);
+            ConsoleHelper.WriteInfo("reload_usage");
 
             return Task.CompletedTask;
         }
@@ -1604,7 +1518,6 @@ new {char.ToUpper(commandName[0]) + commandName.Substring(1)}Command()";
         {
             if (args.Length == 0)
             {
-                // Показываем текущий язык и доступные языки
                 var response = new StringBuilder();
                 response.AppendLine(Localization.GetString("current_language",
                     $"{Localization.GetLanguageName(Localization.CurrentLanguage)} ({Localization.CurrentLanguage})"));
@@ -1614,17 +1527,16 @@ new {char.ToUpper(commandName[0]) + commandName.Substring(1)}Command()";
 
                 response.AppendLine(Localization.GetString("available_languages", string.Join(", ", availableLangs)));
 
-                ConsoleHelper.WriteResponse(response.ToString().TrimEnd());
+                ConsoleHelper.WriteInfo(response.ToString().TrimEnd());
             }
             else
             {
-                // Меняем язык
                 var langCode = args[0].ToLower();
                 if (Localization.GetAvailableLanguages().Contains(langCode))
                 {
                     Localization.SetLanguage(langCode);
                     AppSettings.Language = langCode;
-                    ConsoleHelper.WriteResponse("language_changed",
+                    ConsoleHelper.WriteSuccess("language_changed",
                         $"{Localization.GetLanguageName(langCode)} ({langCode})");
                 }
                 else
@@ -1669,15 +1581,15 @@ new {char.ToUpper(commandName[0]) + commandName.Substring(1)}Command()";
                     if (string.IsNullOrWhiteSpace(command)) continue;
                     if (command.TrimStart().StartsWith("#")) continue;
 
-                    ConsoleHelper.WriteResponse("executing_command", command);
+                    ConsoleHelper.WriteCommand("executing_command", command);
                     var parts = command.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
                     var cmdName = parts[0];
                     var cmdArgs = parts.Length > 1 ? parts.Skip(1).ToArray() : Array.Empty<string>();
 
-                    ConsoleHelper.WriteResponse("command_output", $"Executing: {command}");
+                    ConsoleHelper.WriteInfo("command_output", $"Executing: {command}");
                     await Task.Delay(100);
                 }
-                ConsoleHelper.WriteResponse("script_completed");
+                ConsoleHelper.WriteSuccess("script_completed");
             }
             catch (Exception ex)
             {
@@ -1714,18 +1626,18 @@ public class Program
 
         if (args.All(a => a != "--updated"))
         {
-            ConsoleHelper.WriteResponse("checking_updates");
+            ConsoleHelper.WriteInfo("checking_updates");
             await UpdateChecker.CheckForUpdatesAsync();
         }
         else
         {
-            ConsoleHelper.WriteResponse("update_success");
+            ConsoleHelper.WriteSuccess("update_success");
         }
 
         var manager = new CommandManager(ExtensionsFolder);
         await manager.LoadCommandsAsync();
 
-        ConsoleHelper.WriteResponse("welcome_message");
+        ConsoleHelper.WriteInfo("welcome_message");
 
         while (true)
         {
@@ -1735,7 +1647,7 @@ public class Program
 
             if (input.Equals("exit", StringComparison.OrdinalIgnoreCase))
             {
-                ConsoleHelper.WriteResponse("exit_confirmation");
+                ConsoleHelper.WriteWarning("exit_confirmation");
                 var confirm = Console.ReadLine();
                 if (confirm.Equals("y", StringComparison.OrdinalIgnoreCase))
                     break;
