@@ -298,6 +298,16 @@ public static class Localization
             ["command_requires_recompile"] = "Command '{0}' requires recompilation. Use 'reload' command",
             ["cache_cleared"] = "Metadata cache cleared",
 
+            // Alias command
+            ["alias_description"] = "Manage command aliases",
+            ["alias_usage"] = "alias add <command> <alias>\nalias remove <alias>\nalias list",
+            ["alias_no_aliases"] = "No custom aliases defined",
+            ["alias_header"] = "Custom aliases:",
+            ["alias_added"] = "Alias '{0}' added for command '{1}'",
+            ["alias_removed"] = "Alias '{0}' removed",
+            ["alias_not_found"] = "Alias not found",
+            ["alias_invalid_syntax"] = "Invalid alias command syntax",
+
             // Settings
             ["verified_load_error"] = "Error loading verified hashes: {0}",
             ["settings_error"] = "Error saving settings: {0}"
@@ -1013,6 +1023,7 @@ public class CommandManager
         RegisterCommand(new LanguageCommand());
         RegisterCommand(new ScriptCommand());
         RegisterCommand(new ToggleSuggestionsCommand());
+        RegisterCommand(new AliasCommand());
     }
 
     private async Task LoadExternalCommandsAsync()
@@ -1212,7 +1223,15 @@ public class CommandManager
 
     public ICommand GetCommand(string name)
     {
-        return _commands.TryGetValue(name.ToLowerInvariant(), out var command) ? command : null;
+        var commandName = name.ToLowerInvariant();
+
+        // Проверка пользовательских алиасов
+        if (AliasManager.GetCommandName(commandName) is string resolvedName)
+        {
+            commandName = resolvedName;
+        }
+
+        return _commands.TryGetValue(commandName, out var command) ? command : null;
     }
 
     public bool IsValidCommand(string input)
@@ -1251,7 +1270,7 @@ public class CommandManager
             "help", "list", "reload", "clear", "restart",
             "time", "update", "new", "debug", "enable",
             "disable", "import", "language", "script",
-            "suggestions"
+            "suggestions", "alias"
         };
 
         public HelpCommand(CommandManager manager) => _manager = manager;
@@ -1922,6 +1941,108 @@ new {char.ToUpper(commandName[0]) + commandName.Substring(1)}Command()";
             return Task.CompletedTask;
         }
     }
+
+    private class AliasCommand : ICommand
+    {
+        public string Name => "alias";
+        public string Description => Localization.GetString("alias_description");
+        public IEnumerable<string> Aliases => Enumerable.Empty<string>();
+        public string Author => "System";
+        public string Version => "1.0";
+        public string? UsageExample => Localization.GetString("alias_usage");
+
+        public Task ExecuteAsync(string[] args)
+        {
+            if (args.Length == 0 || args[0] == "list")
+            {
+                var aliases = AliasManager.GetAllAliases();
+                if (!aliases.Any())
+                {
+                    ConsoleHelper.WriteResponse("alias_no_aliases");
+                    return Task.CompletedTask;
+                }
+
+                var response = new StringBuilder(Localization.GetString("alias_header") + "\n");
+                foreach (var alias in aliases)
+                {
+                    response.AppendLine($"- {alias.Key} => {alias.Value}");
+                }
+                ConsoleHelper.WriteResponse(response.ToString().TrimEnd());
+                return Task.CompletedTask;
+            }
+
+            switch (args[0].ToLower())
+            {
+                case "add" when args.Length >= 3:
+                    AliasManager.AddAlias(args[1], args[2]);
+                    ConsoleHelper.WriteResponse("alias_added", args[2], args[1]);
+                    break;
+
+                case "remove" when args.Length >= 2:
+                    if (AliasManager.RemoveAlias(args[1]))
+                        ConsoleHelper.WriteResponse("alias_removed", args[1]);
+                    else
+                        ConsoleHelper.WriteError("alias_not_found");
+                    break;
+
+                default:
+                    ConsoleHelper.WriteError("alias_invalid_syntax");
+                    break;
+            }
+            return Task.CompletedTask;
+        }
+    }
+}
+
+public static class AliasManager
+{
+    private const string AliasFile = "aliases.json";
+    private static Dictionary<string, string> _aliases = new();
+
+    public static void Initialize()
+    {
+        if (File.Exists(AliasFile))
+        {
+            try
+            {
+                var json = File.ReadAllText(AliasFile);
+                _aliases = JsonConvert.DeserializeObject<Dictionary<string, string>>(json)
+                          ?? new Dictionary<string, string>();
+            }
+            catch
+            {
+                _aliases = new Dictionary<string, string>();
+            }
+        }
+    }
+
+    public static void AddAlias(string commandName, string alias)
+    {
+        _aliases[alias.ToLowerInvariant()] = commandName.ToLowerInvariant();
+        SaveAliases();
+    }
+
+    public static bool RemoveAlias(string alias)
+    {
+        bool removed = _aliases.Remove(alias.ToLowerInvariant());
+        if (removed) SaveAliases();
+        return removed;
+    }
+
+    public static string GetCommandName(string alias)
+    {
+        return _aliases.TryGetValue(alias.ToLowerInvariant(), out var cmd) ? cmd : null;
+    }
+
+    public static Dictionary<string, string> GetAllAliases()
+    {
+        return new Dictionary<string, string>(_aliases);
+    }
+
+    private static void SaveAliases()
+    {
+        File.WriteAllText(AliasFile, JsonConvert.SerializeObject(_aliases, Formatting.Indented));
+    }
 }
 
 public class CommandGlobals
@@ -1944,6 +2065,7 @@ public class Program
     public static async Task Main(string[] args)
     {
         MetadataCache.Initialize();
+        AliasManager.Initialize();
         AppSettings.Initialize();
         Console.OutputEncoding = System.Text.Encoding.UTF8;
         ConsoleHelper.Initialize();
