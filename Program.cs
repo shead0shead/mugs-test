@@ -16,6 +16,7 @@ using Microsoft.CodeAnalysis.CSharp.Scripting;
 using Microsoft.CodeAnalysis.Scripting;
 using Newtonsoft.Json;
 using System.Security.Cryptography;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
 
 public interface ICommand
 {
@@ -307,6 +308,16 @@ public static class Localization
             ["alias_removed"] = "Alias '{0}' removed",
             ["alias_not_found"] = "Alias not found",
             ["alias_invalid_syntax"] = "Invalid alias command syntax",
+
+            // Scan command
+            ["scan_description"] = "Scans script for potentially dangerous code",
+            ["scan_missing_file"] = "Specify script file to scan (e.g.: scan mycommand.csx)",
+            ["scan_file_not_found"] = "File '{0}' not found",
+            ["scan_issues_found"] = "Potential security issues found in {0}:",
+            ["scan_no_issues"] = "No dangerous code patterns found in {0}",
+            ["scan_total_issues"] = "Total issues found: {0}",
+            ["scan_error"] = "Scan error: {0}",
+            ["full_path_display"] = "Full path: {0}",
 
             // Settings
             ["verified_load_error"] = "Error loading verified hashes: {0}",
@@ -1024,6 +1035,7 @@ public class CommandManager
         RegisterCommand(new ScriptCommand());
         RegisterCommand(new ToggleSuggestionsCommand());
         RegisterCommand(new AliasCommand());
+        RegisterCommand(new ScanCommand(_extensionsPath));
     }
 
     private async Task LoadExternalCommandsAsync()
@@ -1270,7 +1282,7 @@ public class CommandManager
             "help", "list", "reload", "clear", "restart",
             "time", "update", "new", "debug", "enable",
             "disable", "import", "language", "script",
-            "suggestions", "alias"
+            "suggestions", "alias", "scan"
         };
 
         public HelpCommand(CommandManager manager) => _manager = manager;
@@ -1990,6 +2002,123 @@ new {char.ToUpper(commandName[0]) + commandName.Substring(1)}Command()";
                     break;
             }
             return Task.CompletedTask;
+        }
+    }
+
+    private class ScanCommand : ICommand
+    {
+        private static readonly HashSet<string> DangerousTypes = new()
+    {
+        "System.IO.File", "System.IO.Directory", "System.Diagnostics.Process",
+        "System.Net.WebClient", "System.Net.Http.HttpClient", "System.Reflection",
+        "System.Runtime.InteropServices", "System.Security", "System.Management",
+        "Microsoft.Win32", "System.Data.SqlClient", "System.Net.Sockets"
+    };
+
+        private static readonly HashSet<string> DangerousMethods = new()
+    {
+        "Delete", "Kill", "Start", "Execute", "Run", "Format",
+        "WriteAllText", "WriteAllBytes", "WriteAllLines",
+        "Remove", "Move", "Copy", "Create", "OpenWrite",
+        "DownloadFile", "UploadFile", "ExecuteNonQuery",
+        "ShellExecute", "CreateProcess", "Invoke",
+        "GetProcAddress", "LoadLibrary", "SetWindowsHook"
+    };
+
+        private readonly string _extensionsPath;
+
+        public ScanCommand(string extensionsPath)
+        {
+            _extensionsPath = extensionsPath;
+        }
+
+        public string Name => "scan";
+        public string Description => Localization.GetString("scan_description");
+        public IEnumerable<string> Aliases => new[] { "analyze" };
+        public string Author => "System";
+        public string Version => "1.0";
+        public string? UsageExample => "scan mycommand.csx";
+
+        public async Task ExecuteAsync(string[] args)
+        {
+            if (args.Length == 0)
+            {
+                ConsoleHelper.WriteError("scan_missing_file");
+                return;
+            }
+
+            var fileName = args[0];
+
+            // Добавляем .csx если нужно
+            if (!fileName.EndsWith(".csx", StringComparison.OrdinalIgnoreCase))
+            {
+                fileName += ".csx";
+            }
+
+            var fullPath = Path.Combine(_extensionsPath, fileName);
+
+            if (!File.Exists(fullPath))
+            {
+                ConsoleHelper.WriteError("scan_file_not_found", fileName);
+                ConsoleHelper.WriteResponse("full_path_display", Path.GetFullPath(fullPath));
+                return;
+            }
+
+            try
+            {
+                var code = await File.ReadAllTextAsync(fullPath);
+                var syntaxTree = CSharpSyntaxTree.ParseText(code);
+                var root = await syntaxTree.GetRootAsync();
+
+                var walker = new DangerousCodeWalker();
+                walker.Visit(root);
+
+                if (walker.DangerousCalls.Any())
+                {
+                    ConsoleHelper.WriteError("scan_issues_found", fileName);
+                    foreach (var call in walker.DangerousCalls.Distinct().OrderBy(c => c))
+                    {
+                        ConsoleHelper.WriteError($"- {call}");
+                    }
+                    ConsoleHelper.WriteResponse("scan_total_issues", walker.DangerousCalls.Count);
+                }
+                else
+                {
+                    ConsoleHelper.WriteResponse("scan_no_issues", fileName);
+                }
+            }
+            catch (Exception ex)
+            {
+                ConsoleHelper.WriteError("scan_error", ex.Message);
+            }
+        }
+
+        private class DangerousCodeWalker : CSharpSyntaxWalker
+        {
+            public List<string> DangerousCalls { get; } = new();
+
+            public override void VisitInvocationExpression(InvocationExpressionSyntax node)
+            {
+                var methodName = node.ToString();
+                if (DangerousMethods.Any(m => methodName.Contains(m)) ||
+                    DangerousTypes.Any(t => methodName.StartsWith(t)))
+                {
+                    DangerousCalls.Add(methodName);
+                }
+
+                base.VisitInvocationExpression(node);
+            }
+
+            public override void VisitObjectCreationExpression(ObjectCreationExpressionSyntax node)
+            {
+                var typeName = node.Type.ToString();
+                if (DangerousTypes.Any(t => typeName.StartsWith(t)))
+                {
+                    DangerousCalls.Add($"new {typeName}()");
+                }
+
+                base.VisitObjectCreationExpression(node);
+            }
         }
     }
 }
