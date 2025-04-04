@@ -15,6 +15,7 @@ using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Scripting;
 using Microsoft.CodeAnalysis.Scripting;
 using Newtonsoft.Json;
+using System.Security.Cryptography;
 
 public interface ICommand
 {
@@ -292,6 +293,10 @@ public static class Localization
             ["suggestions_enabled"] = "Command suggestions enabled",
             ["suggestions_disabled"] = "Command suggestions disabled",
 
+            // Command Metadata Cashe
+            ["cache_save_error"] = "Error saving metadata cache: {0}",
+            ["command_requires_recompile"] = "Command '{0}' requires recompilation. Use 'reload' command",
+
             // Settings
             ["verified_load_error"] = "Error loading verified hashes: {0}",
             ["settings_error"] = "Error saving settings: {0}"
@@ -341,6 +346,84 @@ public static class Localization
     }
 
     public static string CurrentLanguage => _currentLanguageCode;
+}
+
+public class CommandMetadata
+{
+    public string Name { get; set; }
+    public string Description { get; set; }
+    public string[] Aliases { get; set; }
+    public string Author { get; set; }
+    public string Version { get; set; }
+    public string FilePath { get; set; }
+    public string Hash { get; set; }
+    public DateTime LastModified { get; set; }
+}
+
+// Добавьте класс для управления кэшем метаданных
+public static class MetadataCache
+{
+    private const string CacheFile = "command_cache.json";
+    private static readonly string CachePath = Path.Combine(AppContext.BaseDirectory, CacheFile);
+    private static Dictionary<string, CommandMetadata> _cache = new();
+
+    public static void Initialize()
+    {
+        if (File.Exists(CachePath))
+        {
+            try
+            {
+                var json = File.ReadAllText(CachePath);
+                _cache = JsonConvert.DeserializeObject<Dictionary<string, CommandMetadata>>(json)
+                    ?? new Dictionary<string, CommandMetadata>();
+            }
+            catch
+            {
+                _cache = new Dictionary<string, CommandMetadata>();
+            }
+        }
+    }
+
+    public static void Save()
+    {
+        try
+        {
+            var json = JsonConvert.SerializeObject(_cache, Formatting.Indented);
+            File.WriteAllText(CachePath, json);
+        }
+        catch (Exception ex)
+        {
+            ConsoleHelper.WriteError("cache_save_error", ex.Message);
+        }
+    }
+
+    public static bool TryGetFromCache(string filePath, out CommandMetadata metadata)
+    {
+        var fileHash = CalculateFileHash(filePath);
+        var lastModified = File.GetLastWriteTimeUtc(filePath);
+
+        if (_cache.TryGetValue(filePath, out metadata) &&
+            metadata.Hash == fileHash &&
+            metadata.LastModified == lastModified)
+        {
+            return true;
+        }
+        return false;
+    }
+
+    public static void UpdateCache(string filePath, CommandMetadata metadata)
+    {
+        metadata.Hash = CalculateFileHash(filePath);
+        metadata.LastModified = File.GetLastWriteTimeUtc(filePath);
+        _cache[filePath] = metadata;
+    }
+
+    private static string CalculateFileHash(string filePath)
+    {
+        using var sha = SHA256.Create();
+        using var stream = File.OpenRead(filePath);
+        return Convert.ToBase64String(sha.ComputeHash(stream));
+    }
 }
 
 public static class ConsoleHelper
@@ -935,16 +1018,66 @@ public class CommandManager
         {
             try
             {
+                if (MetadataCache.TryGetFromCache(file, out var cachedMetadata))
+                {
+                    RegisterCachedCommand(cachedMetadata);
+                    continue;
+                }
+
                 var commands = await CompileAndLoadCommandsAsync(file);
                 foreach (var command in commands)
                 {
                     RegisterCommand(command);
+                    MetadataCache.UpdateCache(file, new CommandMetadata
+                    {
+                        Name = command.Name,
+                        Description = command.Description,
+                        Aliases = command.Aliases.ToArray(),
+                        Author = command.Author,
+                        Version = command.Version,
+                        FilePath = file
+                    });
                 }
             }
             catch (Exception ex)
             {
-                ConsoleHelper.WriteError("Error loading command from file {0}: {1}", Path.GetFileName(file), ex.Message);
+                ConsoleHelper.WriteError("Error loading command from file {0}: {1}",
+                    Path.GetFileName(file), ex.Message);
             }
+        }
+
+        MetadataCache.Save();
+    }
+
+    private void RegisterCachedCommand(CommandMetadata metadata)
+    {
+        var command = new CachedCommand(metadata);
+        _commands[command.Name.ToLowerInvariant()] = command;
+
+        foreach (var alias in command.Aliases ?? Enumerable.Empty<string>())
+        {
+            _commands[alias.ToLowerInvariant()] = command;
+        }
+    }
+
+    // Добавьте класс-заглушку для кэшированных команд
+    private class CachedCommand : ICommand
+    {
+        private readonly CommandMetadata _metadata;
+
+        public CachedCommand(CommandMetadata metadata) => _metadata = metadata;
+
+        public string Name => _metadata.Name;
+        public string Description => _metadata.Description;
+        public IEnumerable<string> Aliases => _metadata.Aliases;
+        public string Author => _metadata.Author;
+        public string Version => _metadata.Version;
+        public string? UsageExample => null;
+
+        public Task ExecuteAsync(string[] args)
+        {
+            ConsoleHelper.WriteError("command_requires_recompile", Name);
+            return Task.CompletedTask;
         }
     }
 
@@ -1840,6 +1973,7 @@ public class Program
 
     public static async Task Main(string[] args)
     {
+        MetadataCache.Initialize();
         AppSettings.Initialize();
         Console.OutputEncoding = System.Text.Encoding.UTF8;
         ConsoleHelper.Initialize();
