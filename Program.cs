@@ -1150,11 +1150,63 @@ public class CommandManager
 
             var imports = new[]
             {
-            "System", "System.IO", "System.Linq", "System.Collections",
-            "System.Collections.Generic", "System.Diagnostics", "System.Threading",
-            "System.Threading.Tasks", "System.Text", "System.Text.RegularExpressions",
-            "System.Net", "System.Net.Http", "System.Dynamic", "System.Xml", "System.Xml.Linq"
-        };
+                // Базовые пространства имен .NET
+                "System",
+                "System.IO",
+                "System.Linq",
+                "System.Collections",
+                "System.Collections.Generic",
+                "System.Diagnostics",
+                "System.Threading",
+                "System.Threading.Tasks",
+                "System.Text",
+                "System.Text.RegularExpressions",
+                "System.Net",
+                "System.Net.Http",
+                "System.Dynamic",
+                "System.Xml",
+                "System.Xml.Linq",
+    
+                // Дополнительные пространства имен
+                "System.Globalization",
+                "System.Security.Cryptography",
+                "System.Numerics",
+                "System.Runtime.InteropServices",
+                "System.Text.Json",
+                "System.Text.Encoding",
+                "System.Console",
+                "System.Math",
+                "System.Environment",
+                "System.Runtime",
+    
+                // Для работы с датами и временем
+                "System.DateTime",
+                "System.TimeSpan",
+    
+                // Для работы с JSON
+                "Newtonsoft.Json",
+                "Newtonsoft.Json.Linq",
+    
+                // Для анализа кода
+                "Microsoft.CodeAnalysis",
+                "Microsoft.CodeAnalysis.CSharp",
+    
+                // Для работы с процессами
+                "System.Diagnostics.Process",
+    
+                // Для работы с рефлексией
+                "System.Reflection",
+    
+                // Для работы с файловой системой
+                "System.IO.Compression",
+                "System.IO.FileSystem",
+    
+                // Для работы с асинхронными операциями
+                "System.Threading.Channels",
+    
+                // Для работы с геолокацией
+                "System.Device.Location"
+            };
 
             var scriptOptions = ScriptOptions.Default
                 .WithReferences(assemblies)
