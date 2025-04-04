@@ -296,6 +296,7 @@ public static class Localization
             // Command Metadata Cashe
             ["cache_save_error"] = "Error saving metadata cache: {0}",
             ["command_requires_recompile"] = "Command '{0}' requires recompilation. Use 'reload' command",
+            ["cache_cleared"] = "Metadata cache cleared",
 
             // Settings
             ["verified_load_error"] = "Error loading verified hashes: {0}",
@@ -395,6 +396,12 @@ public static class MetadataCache
         {
             ConsoleHelper.WriteError("cache_save_error", ex.Message);
         }
+    }
+
+    public static void Clear()
+    {
+        _cache.Clear();
+        Save(); // Сохраняем пустой кэш
     }
 
     public static bool TryGetFromCache(string filePath, out CommandMetadata metadata)
@@ -982,8 +989,9 @@ public class CommandManager
 
     public async Task LoadCommandsAsync()
     {
-        _commands.Clear();
-        ScriptCache.Clear(); // Очищаем кэш при перезагрузке команд
+        _commands.Clear(); // Очищаем все команды
+        ScriptCache.Clear();
+        MetadataCache.Clear(); // Добавляем очистку кэша метаданных
         RegisterBuiltInCommands();
         await LoadExternalCommandsAsync();
     }
@@ -1018,12 +1026,6 @@ public class CommandManager
         {
             try
             {
-                if (MetadataCache.TryGetFromCache(file, out var cachedMetadata))
-                {
-                    RegisterCachedCommand(cachedMetadata);
-                    continue;
-                }
-
                 var commands = await CompileAndLoadCommandsAsync(file);
                 foreach (var command in commands)
                 {
@@ -1041,44 +1043,11 @@ public class CommandManager
             }
             catch (Exception ex)
             {
-                ConsoleHelper.WriteError("Error loading command from file {0}: {1}",
-                    Path.GetFileName(file), ex.Message);
+                ConsoleHelper.WriteError("Error loading command: {0}", ex.Message);
             }
         }
 
         MetadataCache.Save();
-    }
-
-    private void RegisterCachedCommand(CommandMetadata metadata)
-    {
-        var command = new CachedCommand(metadata);
-        _commands[command.Name.ToLowerInvariant()] = command;
-
-        foreach (var alias in command.Aliases ?? Enumerable.Empty<string>())
-        {
-            _commands[alias.ToLowerInvariant()] = command;
-        }
-    }
-
-    // Добавьте класс-заглушку для кэшированных команд
-    private class CachedCommand : ICommand
-    {
-        private readonly CommandMetadata _metadata;
-
-        public CachedCommand(CommandMetadata metadata) => _metadata = metadata;
-
-        public string Name => _metadata.Name;
-        public string Description => _metadata.Description;
-        public IEnumerable<string> Aliases => _metadata.Aliases;
-        public string Author => _metadata.Author;
-        public string Version => _metadata.Version;
-        public string? UsageExample => null;
-
-        public Task ExecuteAsync(string[] args)
-        {
-            ConsoleHelper.WriteError("command_requires_recompile", Name);
-            return Task.CompletedTask;
-        }
     }
 
     private async Task<IEnumerable<ICommand>> CompileAndLoadCommandsAsync(string filePath)
@@ -1497,8 +1466,9 @@ public class CommandManager
         public async Task ExecuteAsync(string[] args)
         {
             ConsoleHelper.WriteResponse("reloading_commands");
+            MetadataCache.Clear(); // Принудительная очистка
             await _manager.LoadCommandsAsync();
-            ConsoleHelper.WriteResponse("commands_reloaded");
+            ConsoleHelper.WriteResponse(Localization.GetString("commands_reloaded") + "\n" + Localization.GetString("cache_cleared"));
         }
     }
 
