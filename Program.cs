@@ -489,6 +489,63 @@ public static class ConsoleHelper
     }
 }
 
+public static class ScriptCache
+{
+    private static readonly Dictionary<string, Script> _scriptCache = new();
+    private static readonly Dictionary<string, Assembly> _assemblyCache = new();
+    private static readonly object _lock = new();
+
+    public static void AddScript(string filePath, Script script)
+    {
+        lock (_lock)
+        {
+            var normalizedPath = NormalizePath(filePath);
+            _scriptCache[normalizedPath] = script;
+        }
+    }
+
+    public static bool TryGetScript(string filePath, out Script script)
+    {
+        lock (_lock)
+        {
+            var normalizedPath = NormalizePath(filePath);
+            return _scriptCache.TryGetValue(normalizedPath, out script);
+        }
+    }
+
+    public static void AddAssembly(string filePath, Assembly assembly)
+    {
+        lock (_lock)
+        {
+            var normalizedPath = NormalizePath(filePath);
+            _assemblyCache[normalizedPath] = assembly;
+        }
+    }
+
+    public static bool TryGetAssembly(string filePath, out Assembly assembly)
+    {
+        lock (_lock)
+        {
+            var normalizedPath = NormalizePath(filePath);
+            return _assemblyCache.TryGetValue(normalizedPath, out assembly);
+        }
+    }
+
+    public static void Clear()
+    {
+        lock (_lock)
+        {
+            _scriptCache.Clear();
+            _assemblyCache.Clear();
+        }
+    }
+
+    private static string NormalizePath(string path)
+    {
+        return Path.GetFullPath(path).ToLowerInvariant();
+    }
+}
+
 public class VerifiedExtensionsChecker
 {
     private const string VerifiedHashesUrl = "https://raw.githubusercontent.com/shead0shead/mugs-test/main/verified_hashes.json";
@@ -816,6 +873,7 @@ public class CommandManager
     public async Task LoadCommandsAsync()
     {
         _commands.Clear();
+        ScriptCache.Clear(); // Очищаем кэш при перезагрузке команд
         RegisterBuiltInCommands();
         await LoadExternalCommandsAsync();
     }
@@ -867,43 +925,81 @@ public class CommandManager
         var code = await File.ReadAllTextAsync(filePath);
         var isScript = Path.GetExtension(filePath).Equals(".csx", StringComparison.OrdinalIgnoreCase);
 
-        return isScript ? await LoadFromScriptAsync(code) : await LoadFromClassFileAsync(code);
+        if (isScript)
+        {
+            // Проверяем кэш для скриптов
+            if (ScriptCache.TryGetScript(filePath, out var cachedScript))
+            {
+                try
+                {
+                    var result = await cachedScript.RunAsync(new CommandGlobals { Manager = this });
+                    if (result.Exception != null) throw result.Exception;
+                    var command = result.ReturnValue as ICommand;
+                    return command != null ? new[] { command } : Enumerable.Empty<ICommand>();
+                }
+                catch
+                {
+                    ScriptCache.Clear();
+                    return await LoadFromScriptAsync(code, filePath);
+                }
+            }
+
+            // Если скрипта нет в кэше, загружаем его
+            return await LoadFromScriptAsync(code, filePath);
+        }
+        else
+        {
+            // Проверяем кэш для сборок
+            if (ScriptCache.TryGetAssembly(filePath, out var cachedAssembly))
+            {
+                return cachedAssembly.GetTypes()
+                    .Where(t => typeof(ICommand).IsAssignableFrom(t) && !t.IsInterface && !t.IsAbstract)
+                    .Select(type => (ICommand)Activator.CreateInstance(type));
+            }
+
+            // Если сборки нет в кэше, компилируем
+            var commands = await LoadFromClassFileAsync(code, filePath);
+            return commands;
+        }
     }
 
-    private async Task<IEnumerable<ICommand>> LoadFromScriptAsync(string code)
+    private async Task<IEnumerable<ICommand>> LoadFromScriptAsync(string code, string filePath)
     {
         try
         {
             var assemblies = new[]
             {
-                typeof(object).Assembly,
-                typeof(Enumerable).Assembly,
-                typeof(System.ComponentModel.Component).Assembly,
-                typeof(System.Diagnostics.Process).Assembly,
-                typeof(System.Dynamic.DynamicObject).Assembly,
-                typeof(System.IO.File).Assembly,
-                typeof(System.Net.WebClient).Assembly,
-                typeof(System.Text.RegularExpressions.Regex).Assembly,
-                typeof(System.Xml.XmlDocument).Assembly,
-                Assembly.GetExecutingAssembly()
-            };
+            typeof(object).Assembly,
+            typeof(Enumerable).Assembly,
+            typeof(System.ComponentModel.Component).Assembly,
+            typeof(System.Diagnostics.Process).Assembly,
+            typeof(System.Dynamic.DynamicObject).Assembly,
+            typeof(System.IO.File).Assembly,
+            typeof(System.Net.WebClient).Assembly,
+            typeof(System.Text.RegularExpressions.Regex).Assembly,
+            typeof(System.Xml.XmlDocument).Assembly,
+            Assembly.GetExecutingAssembly()
+        };
 
             var imports = new[]
             {
-                "System", "System.IO", "System.Linq", "System.Collections",
-                "System.Collections.Generic", "System.Diagnostics", "System.Threading",
-                "System.Threading.Tasks", "System.Text", "System.Text.RegularExpressions",
-                "System.Net", "System.Net.Http", "System.Dynamic", "System.Xml", "System.Xml.Linq"
-            };
+            "System", "System.IO", "System.Linq", "System.Collections",
+            "System.Collections.Generic", "System.Diagnostics", "System.Threading",
+            "System.Threading.Tasks", "System.Text", "System.Text.RegularExpressions",
+            "System.Net", "System.Net.Http", "System.Dynamic", "System.Xml", "System.Xml.Linq"
+        };
 
             var scriptOptions = ScriptOptions.Default
                 .WithReferences(assemblies)
                 .WithImports(imports);
 
-            var globals = new CommandGlobals();
-            var script = CSharpScript.Create<ICommand>(code, scriptOptions, typeof(CommandGlobals));
+            var globalsType = typeof(CommandGlobals);
 
+            // Создаем скрипт и сразу получаем его компиляцию
+            var script = CSharpScript.Create(code, scriptOptions, globalsType);
             var compilation = script.GetCompilation();
+
+            // Получаем диагностические сообщения из компиляции
             var diagnostics = compilation.GetDiagnostics()
                 .Where(d => d.Severity == DiagnosticSeverity.Error)
                 .ToList();
@@ -914,10 +1010,14 @@ public class CommandManager
                     string.Join(Environment.NewLine, diagnostics.Select(d => d.GetMessage())));
             }
 
-            var result = await script.RunAsync(globals);
+            // Кэшируем только если компиляция прошла успешно
+            ScriptCache.AddScript(filePath, script);
+
+            var result = await script.RunAsync(new CommandGlobals { Manager = this });
             if (result.Exception != null) throw result.Exception;
 
-            return result.ReturnValue != null ? new[] { result.ReturnValue } : Enumerable.Empty<ICommand>();
+            var command = result.ReturnValue as ICommand;
+            return command != null ? new[] { command } : Enumerable.Empty<ICommand>();
         }
         catch (CompilationErrorException ex)
         {
@@ -931,16 +1031,16 @@ public class CommandManager
         }
     }
 
-    private async Task<IEnumerable<ICommand>> LoadFromClassFileAsync(string code)
+    private async Task<IEnumerable<ICommand>> LoadFromClassFileAsync(string code, string filePath)
     {
         var syntaxTree = CSharpSyntaxTree.ParseText(code);
         var references = new[]
         {
-            MetadataReference.CreateFromFile(typeof(object).Assembly.Location),
-            MetadataReference.CreateFromFile(typeof(ICommand).Assembly.Location),
-            MetadataReference.CreateFromFile(typeof(Task).Assembly.Location),
-            MetadataReference.CreateFromFile(Assembly.GetExecutingAssembly().Location)
-        };
+        MetadataReference.CreateFromFile(typeof(object).Assembly.Location),
+        MetadataReference.CreateFromFile(typeof(ICommand).Assembly.Location),
+        MetadataReference.CreateFromFile(typeof(Task).Assembly.Location),
+        MetadataReference.CreateFromFile(Assembly.GetExecutingAssembly().Location)
+    };
 
         var compilation = CSharpCompilation.Create(
             "DynamicCommands",
@@ -959,6 +1059,9 @@ public class CommandManager
 
         ms.Seek(0, SeekOrigin.Begin);
         var assembly = Assembly.Load(ms.ToArray());
+
+        // Кэшируем загруженную сборку
+        ScriptCache.AddAssembly(filePath, assembly);
 
         return assembly.GetTypes()
             .Where(t => typeof(ICommand).IsAssignableFrom(t) && !t.IsInterface && !t.IsAbstract)
