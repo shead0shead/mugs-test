@@ -319,6 +319,14 @@ public static class Localization
             ["scan_error"] = "Scan error: {0}",
             ["full_path_display"] = "Full path: {0}",
 
+            // History command
+            ["history_description"] = "Shows command history or searches in history",
+            ["history_showing"] = "Showing last {0} commands:",
+            ["history_search_results"] = "Search results for \"{0}\":",
+            ["history_no_results"] = "No commands found matching \"{0}\"",
+            ["history_invalid_count"] = "Invalid count specified. Using default value.",
+            ["history_full"] = "Full command history:",
+
             // Settings
             ["verified_load_error"] = "Error loading verified hashes: {0}",
             ["settings_error"] = "Error saving settings: {0}"
@@ -581,6 +589,11 @@ public static class ConsoleHelper
         Console.SetCursorPosition(0, inputRow);
         Console.Write(new string(' ', Console.WindowWidth - 1));
         Console.SetCursorPosition(0, inputRow);
+    }
+
+    public static List<string> GetCommandHistory()
+    {
+        return new List<string>(commandHistory);
     }
 
     public static void WriteResponse(string messageKey, params object[] args)
@@ -1036,6 +1049,7 @@ public class CommandManager
         RegisterCommand(new ToggleSuggestionsCommand());
         RegisterCommand(new AliasCommand());
         RegisterCommand(new ScanCommand(_extensionsPath));
+        RegisterCommand(new HistoryCommand());
     }
 
     private async Task LoadExternalCommandsAsync()
@@ -1282,7 +1296,7 @@ public class CommandManager
             "help", "list", "reload", "clear", "restart",
             "time", "update", "new", "debug", "enable",
             "disable", "import", "language", "script",
-            "suggestions", "alias", "scan"
+            "suggestions", "alias", "scan", "history"
         };
 
         public HelpCommand(CommandManager manager) => _manager = manager;
@@ -2119,6 +2133,78 @@ new {char.ToUpper(commandName[0]) + commandName.Substring(1)}Command()";
 
                 base.VisitObjectCreationExpression(node);
             }
+        }
+    }
+
+    private class HistoryCommand : ICommand
+    {
+        public string Name => "history";
+        public string Description => Localization.GetString("history_description");
+        public IEnumerable<string> Aliases => new[] { "hist" };
+        public string Author => "System";
+        public string Version => "1.0";
+        public string? UsageExample => "history 10\nhistory --search \"update\"";
+
+        public Task ExecuteAsync(string[] args)
+        {
+            var history = ConsoleHelper.GetCommandHistory();
+            var response = new StringBuilder();
+
+            if (args.Length > 0 && args[0] == "--search")
+            {
+                if (args.Length < 2)
+                {
+                    ConsoleHelper.WriteError("missing_search_term");
+                    return Task.CompletedTask;
+                }
+
+                var searchTerm = string.Join(" ", args.Skip(1)).ToLowerInvariant();
+                var results = history.Where(cmd => cmd.ToLowerInvariant().Contains(searchTerm)).ToList();
+
+                if (results.Any())
+                {
+                    response.AppendLine(Localization.GetString("history_search_results", searchTerm));
+                    foreach (var cmd in results)
+                    {
+                        response.AppendLine($"- {cmd}");
+                    }
+                }
+                else
+                {
+                    response.AppendLine(Localization.GetString("history_no_results", searchTerm));
+                }
+            }
+            else
+            {
+                int count = 10;
+                if (args.Length > 0 && int.TryParse(args[0], out int requestedCount) && requestedCount > 0)
+                {
+                    count = requestedCount;
+                }
+                else if (args.Length > 0)
+                {
+                    response.AppendLine(Localization.GetString("history_invalid_count"));
+                }
+
+                var commandsToShow = history.TakeLast(count).ToList();
+
+                if (count >= history.Count)
+                {
+                    response.AppendLine(Localization.GetString("history_full"));
+                }
+                else
+                {
+                    response.AppendLine(Localization.GetString("history_showing", count));
+                }
+
+                foreach (var cmd in commandsToShow)
+                {
+                    response.AppendLine($"- {cmd}");
+                }
+            }
+
+            ConsoleHelper.WriteResponse(response.ToString().TrimEnd());
+            return Task.CompletedTask;
         }
     }
 }
