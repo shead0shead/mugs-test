@@ -35,6 +35,7 @@ public static class AppSettings
     public class Settings
     {
         public string Language { get; set; } = "en";
+        public bool EnableSuggestions { get; set; } = true;
     }
 
     public static void Initialize()
@@ -64,6 +65,16 @@ public static class AppSettings
         set
         {
             _currentSettings.Language = value;
+            SaveSettings();
+        }
+    }
+
+    public static bool EnableSuggestions
+    {
+        get => _currentSettings.EnableSuggestions;
+        set
+        {
+            _currentSettings.EnableSuggestions = value;
             SaveSettings();
         }
     }
@@ -276,6 +287,11 @@ public static class Localization
             ["script_completed"] = "Script execution completed",
             ["script_error"] = "Script execution error: {0}",
 
+            // Toggle suggestions
+            ["toggle_suggestions"] = "Toggles command suggestions display",
+            ["suggestions_enabled"] = "Command suggestions enabled",
+            ["suggestions_disabled"] = "Command suggestions disabled",
+
             // Settings
             ["verified_load_error"] = "Error loading verified hashes: {0}",
             ["settings_error"] = "Error saving settings: {0}"
@@ -433,8 +449,19 @@ public static class ConsoleHelper
         var isValid = manager.IsValidCommand(input);
         Console.ForegroundColor = isValid ? ConsoleColor.Gray : ConsoleColor.Red;
         Console.Write(input);
-        Console.ResetColor();
 
+        // Добавляем проверку настройки
+        if (AppSettings.EnableSuggestions && !string.IsNullOrEmpty(input))
+        {
+            var suggestion = manager.GetCommandSuggestion(input.Split(' ')[0]);
+            if (suggestion != null)
+            {
+                Console.ForegroundColor = ConsoleColor.DarkGray;
+                Console.Write(suggestion);
+            }
+        }
+
+        Console.ResetColor();
         Console.SetCursorPosition(Math.Min(cursorPosition + 2, Console.WindowWidth - 1), inputRow);
     }
 
@@ -894,6 +921,7 @@ public class CommandManager
         RegisterCommand(new ImportCommand(this));
         RegisterCommand(new LanguageCommand());
         RegisterCommand(new ScriptCommand());
+        RegisterCommand(new ToggleSuggestionsCommand());
     }
 
     private async Task LoadExternalCommandsAsync()
@@ -1103,15 +1131,26 @@ public class CommandManager
             .OrderBy(cmd => cmd);
     }
 
+    public string GetCommandSuggestion(string prefix)
+    {
+        var commands = GetCommandNamesStartingWith(prefix).ToList();
+        if (commands.Count == 0) return null;
+        var firstMatch = commands.First();
+        return firstMatch.Length > prefix.Length
+            ? firstMatch.Substring(prefix.Length)
+            : null;
+    }
+
     private class HelpCommand : ICommand
     {
         private readonly CommandManager _manager;
         private readonly HashSet<string> _builtInCommands = new()
-    {
-        "help", "list", "reload", "clear", "restart",
-        "time", "update", "new", "debug", "enable",
-        "disable", "import", "language", "script"
-    };
+        {
+            "help", "list", "reload", "clear", "restart",
+            "time", "update", "new", "debug", "enable",
+            "disable", "import", "language", "script",
+            "suggestions"
+        };
 
         public HelpCommand(CommandManager manager) => _manager = manager;
         public string Name => "help";
@@ -1759,6 +1798,25 @@ new {char.ToUpper(commandName[0]) + commandName.Substring(1)}Command()";
             {
                 ConsoleHelper.WriteError("script_error", ex.Message);
             }
+        }
+    }
+
+    private class ToggleSuggestionsCommand : ICommand
+    {
+        public string Name => "suggestions";
+        public string Description => Localization.GetString("toggle_suggestions");
+        public IEnumerable<string> Aliases => new[] { "ts" };
+        public string Author => "System";
+        public string Version => "1.0";
+        public string? UsageExample => "toggle-suggestions";
+
+        public Task ExecuteAsync(string[] args)
+        {
+            AppSettings.EnableSuggestions = !AppSettings.EnableSuggestions;
+            ConsoleHelper.WriteResponse(AppSettings.EnableSuggestions
+                ? Localization.GetString("suggestions_enabled")
+                : Localization.GetString("suggestions_disabled"));
+            return Task.CompletedTask;
         }
     }
 }
