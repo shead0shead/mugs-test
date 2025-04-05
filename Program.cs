@@ -17,6 +17,8 @@ using Microsoft.CodeAnalysis.Scripting;
 using Newtonsoft.Json;
 using System.Security.Cryptography;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
+using System.Collections.Concurrent;
+using System.Dynamic;
 
 public interface ICommand
 {
@@ -301,7 +303,7 @@ public static class Localization
 
             // Alias command
             ["alias_description"] = "Manage command aliases",
-            ["alias_usage"] = "alias add <command> <alias>\nalias remove <alias>\nalias list",
+            ["alias_usage"] = "alias add <command> <alias>, alias remove <alias>, alias list",
             ["alias_no_aliases"] = "No custom aliases defined",
             ["alias_header"] = "Custom aliases:",
             ["alias_added"] = "Alias '{0}' added for command '{1}'",
@@ -855,6 +857,27 @@ public class UpdateChecker
     }
 }
 
+public static class SharedData
+{
+    private static readonly ConcurrentDictionary<string, object> _data = new();
+    private static readonly ConcurrentDictionary<string, Assembly> _loadedScripts = new();
+
+    public static void Set(string key, object value) => _data[key] = value;
+    public static T Get<T>(string key) => _data.TryGetValue(key, out var value) ? (T)value : default;
+    public static bool Contains(string key) => _data.ContainsKey(key);
+
+    public static void RegisterScript(string scriptName, Assembly assembly)
+    {
+        _loadedScripts[scriptName.ToLowerInvariant()] = assembly;
+    }
+
+    public static Assembly GetScriptAssembly(string scriptName)
+    {
+        _loadedScripts.TryGetValue(scriptName.ToLowerInvariant(), out var assembly);
+        return assembly;
+    }
+}
+
 public class ExtensionManager
 {
     private readonly string _extensionsPath;
@@ -1109,7 +1132,7 @@ public class CommandManager
             {
                 try
                 {
-                    var result = await cachedScript.RunAsync(new CommandGlobals { Manager = this });
+                    var result = await cachedScript.RunAsync(new CommandGlobals(_extensionsPath) { Manager = this });
                     if (result.Exception != null) throw result.Exception;
                     var command = result.ReturnValue as ICommand;
                     return command != null ? new[] { command } : Enumerable.Empty<ICommand>();
@@ -1172,11 +1195,28 @@ public class CommandManager
 
             var globalsType = typeof(CommandGlobals);
 
-            // Создаем скрипт и сразу получаем его компиляцию
-            var script = CSharpScript.Create(code, scriptOptions, globalsType);
-            var compilation = script.GetCompilation();
+            // Проверяем кэш
+            if (ScriptCache.TryGetScript(filePath, out var cachedScript))
+            {
+                try
+                {
+                    var scriptResult = await cachedScript.RunAsync(new CommandGlobals(_extensionsPath) { Manager = this });
+                    if (scriptResult.Exception != null) throw scriptResult.Exception;
+                    var cmd = scriptResult.ReturnValue as ICommand;
+                    return cmd != null ? new[] { cmd } : Enumerable.Empty<ICommand>();
+                }
+                catch
+                {
+                    ScriptCache.Clear();
+                    // Продолжаем с обычной загрузкой
+                }
+            }
 
-            // Получаем диагностические сообщения из компиляции
+            // Добавляем поддержку #load директив
+            var processedCode = ProcessLoadDirectives(code, filePath);
+
+            var script = CSharpScript.Create(processedCode, scriptOptions, globalsType);
+            var compilation = script.GetCompilation();
             var diagnostics = compilation.GetDiagnostics()
                 .Where(d => d.Severity == DiagnosticSeverity.Error)
                 .ToList();
@@ -1187,10 +1227,9 @@ public class CommandManager
                     string.Join(Environment.NewLine, diagnostics.Select(d => d.GetMessage())));
             }
 
-            // Кэшируем только если компиляция прошла успешно
             ScriptCache.AddScript(filePath, script);
 
-            var result = await script.RunAsync(new CommandGlobals { Manager = this });
+            var result = await script.RunAsync(new CommandGlobals(_extensionsPath) { Manager = this });
             if (result.Exception != null) throw result.Exception;
 
             var command = result.ReturnValue as ICommand;
@@ -1206,6 +1245,43 @@ public class CommandManager
             ConsoleHelper.WriteError("Script execution error: {0}", ex.Message);
             return Enumerable.Empty<ICommand>();
         }
+    }
+
+    private string ProcessLoadDirectives(string code, string currentFilePath)
+    {
+        var lines = code.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None);
+        var result = new StringBuilder();
+        var loadedScripts = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var line in lines)
+        {
+            if (line.TrimStart().StartsWith("#load ", StringComparison.OrdinalIgnoreCase))
+            {
+                var scriptName = line.Substring(line.IndexOf('"') + 1);
+                scriptName = scriptName.Substring(0, scriptName.IndexOf('"'));
+
+                if (!loadedScripts.Contains(scriptName))
+                {
+                    var scriptPath = Path.Combine(Path.GetDirectoryName(currentFilePath), scriptName);
+                    if (File.Exists(scriptPath))
+                    {
+                        var scriptCode = File.ReadAllText(scriptPath);
+                        result.AppendLine(ProcessLoadDirectives(scriptCode, scriptPath));
+                        loadedScripts.Add(scriptName);
+                    }
+                    else
+                    {
+                        throw new FileNotFoundException($"Script file not found: {scriptName}");
+                    }
+                }
+            }
+            else
+            {
+                result.AppendLine(line);
+            }
+        }
+
+        return result.ToString();
     }
 
     private async Task<IEnumerable<ICommand>> LoadFromClassFileAsync(string code, string filePath)
@@ -2342,6 +2418,13 @@ public static class AliasManager
 
 public class CommandGlobals
 {
+    private readonly string _extensionsPath;
+
+    public CommandGlobals(string extensionsPath)
+    {
+        _extensionsPath = extensionsPath;
+    }
+
     public void Print(string message) => ConsoleHelper.WriteResponse(message);
     public void PrintError(string message) => ConsoleHelper.WriteError(message);
     public string ReadLine() => Console.ReadLine();
@@ -2351,6 +2434,72 @@ public class CommandGlobals
     public void DebugVar(string name, object value) => ConsoleHelper.WriteDebug($"{name} = {JsonConvert.SerializeObject(value)}");
 
     public CommandManager Manager { get; set; }
+
+    // Новые методы для работы с общими данными и скриптами
+    public void SetSharedData(string key, object value) => SharedData.Set(key, value);
+    public T GetSharedData<T>(string key) => SharedData.Get<T>(key);
+    public bool HasSharedData(string key) => SharedData.Contains(key);
+
+    public dynamic LoadScript(string scriptName)
+    {
+        var scriptPath = Path.Combine(_extensionsPath, scriptName);
+        if (!File.Exists(scriptPath))
+        {
+            throw new FileNotFoundException($"Script file not found: {scriptName}");
+        }
+
+        // Проверяем, не загружен ли уже этот скрипт
+        var cachedAssembly = SharedData.GetScriptAssembly(scriptName);
+        if (cachedAssembly != null)
+        {
+            return CreateScriptProxy(cachedAssembly);
+        }
+
+        // Загружаем скрипт
+        var scriptCode = File.ReadAllText(scriptPath);
+        var script = CSharpScript.Create(scriptCode,
+            ScriptOptions.Default
+                .WithReferences(Assembly.GetExecutingAssembly())
+                .WithImports("System", "System.Collections.Generic"),
+            typeof(CommandGlobals));
+
+        var compilation = script.GetCompilation();
+        var diagnostics = compilation.GetDiagnostics();
+        if (diagnostics.Any(d => d.Severity == DiagnosticSeverity.Error))
+        {
+            throw new InvalidOperationException(
+                string.Join(Environment.NewLine, diagnostics.Select(d => d.GetMessage())));
+        }
+
+        using var peStream = new MemoryStream();
+        var emitResult = compilation.Emit(peStream);
+        if (!emitResult.Success)
+        {
+            throw new InvalidOperationException(
+                string.Join(Environment.NewLine, emitResult.Diagnostics.Select(d => d.GetMessage())));
+        }
+
+        peStream.Seek(0, SeekOrigin.Begin);
+        var assembly = Assembly.Load(peStream.ToArray());
+        SharedData.RegisterScript(scriptName, assembly);
+
+        return CreateScriptProxy(assembly);
+    }
+
+    private dynamic CreateScriptProxy(Assembly assembly)
+    {
+        // Создаем динамический объект, который будет проксировать вызовы к классам из сборки
+        dynamic proxy = new ExpandoObject();
+        var proxyDict = (IDictionary<string, object>)proxy;
+
+        foreach (var type in assembly.GetTypes().Where(t => t.IsPublic))
+        {
+            // Для каждого публичного класса добавляем свойство в прокси
+            proxyDict[type.Name] = Activator.CreateInstance(type);
+        }
+
+        return proxy;
+    }
 }
 
 public class Program
