@@ -1740,32 +1740,32 @@ public class CommandManager
             }
 
             var template = $@"// Example extension script for command '{commandName}'
-// Remove comments and implement your command
+                // Remove comments and implement your command
 
-public class {char.ToUpper(commandName[0]) + commandName.Substring(1)}Command : ICommand
-{{
-    public string Name => ""{commandName}"";
-    public string Description => ""Description of {commandName} command"";
-    public IEnumerable<string> Aliases => new[] {{ ""{commandName[0]}"", ""{commandName.Substring(0, Math.Min(3, commandName.Length))}"" }};
-    public string Author => ""Your Name"";
-    public string Version => ""1.0"";
-    public string? UsageExample => ""{commandName} arg1 arg2\n{commandName} --option"";
+                public class {char.ToUpper(commandName[0]) + commandName.Substring(1)}Command : ICommand
+                {{
+                    public string Name => ""{commandName}"";
+                    public string Description => ""Description of {commandName} command"";
+                    public IEnumerable<string> Aliases => new[] {{ ""{commandName[0]}"", ""{commandName.Substring(0, Math.Min(3, commandName.Length))}"" }};
+                    public string Author => ""Your Name"";
+                    public string Version => ""1.0"";
+                    public string? UsageExample => ""{commandName} arg1 arg2\n{commandName} --option"";
 
-    public async Task ExecuteAsync(string[] args)
-    {{
-        // Your code here
-        Print(""Command '{commandName}' executed!"");
+                    public async Task ExecuteAsync(string[] args)
+                    {{
+                        // Your code here
+                        Print(""Command '{commandName}' executed!"");
         
-        // Example argument handling
-        if (args.Length > 0)
-        {{
-            Print($""Received arguments: {{string.Join("", "", args)}}"");
-        }}
-    }}
-}}
+                        // Example argument handling
+                        if (args.Length > 0)
+                        {{
+                            Print($""Received arguments: {{string.Join("", "", args)}}"");
+                        }}
+                    }}
+                }}
 
-// Return command instance
-new {char.ToUpper(commandName[0]) + commandName.Substring(1)}Command()";
+                // Return command instance
+                new {char.ToUpper(commandName[0]) + commandName.Substring(1)}Command()";
 
             File.WriteAllText(filePath, template);
             ConsoleHelper.WriteResponse("template_created", fileName);
@@ -2313,16 +2313,6 @@ new {char.ToUpper(commandName[0]) + commandName.Substring(1)}Command()";
 
         public Task ExecuteAsync(string[] args)
         {
-            var asciiArt2 = new[]
-            {
-                "  ░░░░      ░░░░  ",
-                " ▒▒▒▒▒▒    ▒▒▒▒▒▒ ",
-                "▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓",
-                "▒▒▒▒▒  ▒▒▒▒  ▒▒▒▒▒",
-                "░░░░   ░░░░   ░░░░",
-                "  ░░          ░░  " 
-            };
-
             var asciiArt = new[]
 {
                 "░░░░░░░░░░░░░     ",
@@ -2340,7 +2330,7 @@ new {char.ToUpper(commandName[0]) + commandName.Substring(1)}Command()";
 
             var info = new[]
             {
-                $"{$"{Localization.GetString("application")}:",-15} Mugs Console Addon-Platform",
+                $"{$"{Localization.GetString("application")}:",-15} Mugs Console Add-on Platform",
                 $"{$"{Localization.GetString("version")}:",-15} 1.0.0",
                 $"{$"{Localization.GetString("author")}:",-15} Shead (https://github.com/shead0shead)",
                 $"{$"{Localization.GetString("repo")}:",-15} https://github.com/shead0shead/mugs-test",
