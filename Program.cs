@@ -327,6 +327,15 @@ public static class Localization
             ["history_invalid_count"] = "Invalid count specified. Using default value.",
             ["history_full"] = "Full command history:",
 
+            // Version command
+            ["version_description"] = "Shows application version and information",
+            ["application"] = "Application",
+            ["repo"] = "Repo",
+            ["commands"] = "Commands",
+            ["extensions"] = "Extensions",
+            ["available"] = "available",
+            ["loaded"] = "loaded",
+
             // Settings
             ["verified_load_error"] = "Error loading verified hashes: {0}",
             ["settings_error"] = "Error saving settings: {0}"
@@ -1050,6 +1059,7 @@ public class CommandManager
         RegisterCommand(new AliasCommand());
         RegisterCommand(new ScanCommand(_extensionsPath));
         RegisterCommand(new HistoryCommand());
+        RegisterCommand(new VersionCommand(this));
     }
 
     private async Task LoadExternalCommandsAsync()
@@ -1296,7 +1306,8 @@ public class CommandManager
             "help", "list", "reload", "clear", "restart",
             "time", "update", "new", "debug", "enable",
             "disable", "import", "language", "script",
-            "suggestions", "alias", "scan", "history"
+            "suggestions", "alias", "scan", "history",
+            "version"
         };
 
         public HelpCommand(CommandManager manager) => _manager = manager;
@@ -2204,6 +2215,75 @@ new {char.ToUpper(commandName[0]) + commandName.Substring(1)}Command()";
             }
 
             ConsoleHelper.WriteResponse(response.ToString().TrimEnd());
+            return Task.CompletedTask;
+        }
+    }
+
+    private class VersionCommand : ICommand
+    {
+        private readonly CommandManager _manager;
+
+        public VersionCommand(CommandManager manager)
+        {
+            _manager = manager;
+        }
+
+        public string Name => "version";
+        public string Description => Localization.GetString("version_description");
+        public IEnumerable<string> Aliases => new[] { "ver" };
+        public string Author => "System";
+        public string Version => "1.0";
+        public string? UsageExample => "version";
+
+        public Task ExecuteAsync(string[] args)
+        {
+            var asciiArt2 = new[]
+            {
+                "  ░░░░      ░░░░  ",
+                " ▒▒▒▒▒▒    ▒▒▒▒▒▒ ",
+                "▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓",
+                "▒▒▒▒▒  ▒▒▒▒  ▒▒▒▒▒",
+                "░░░░   ░░░░   ░░░░",
+                "  ░░          ░░  " 
+            };
+
+            var asciiArt = new[]
+{
+                "░░░░░░░░░░░░░     ",
+                "▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒ ",
+                "▓▓▓▓▓▓▓▓▓▓▓▓▓   ▓▓",
+                "▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒ ",
+                "░░░░░░░░░░░░░     ",
+                " ░░░░░░░░░░░      "
+            };
+
+            var extensionsPath = Path.Combine(AppContext.BaseDirectory, "Extensions");
+            var extensionsCount = Directory.Exists(extensionsPath)
+                ? Directory.GetFiles(extensionsPath, "*.csx").Length
+                : 0;
+
+            var info = new[]
+            {
+                $"{$"{Localization.GetString("application")}:",-15} Mugs Console Addon-Platform",
+                $"{$"{Localization.GetString("version")}:",-15} 1.0.0",
+                $"{$"{Localization.GetString("author")}:",-15} Shead (https://github.com/shead0shead)",
+                $"{$"{Localization.GetString("repo")}:",-15} https://github.com/shead0shead/mugs-test",
+                $"{$"{Localization.GetString("commands")}:",-15} {_manager.GetAllCommands().Count()} {Localization.GetString("available")}",
+                $"{$"{Localization.GetString("extensions")}:",-15} {extensionsCount} {Localization.GetString("loaded")}"
+            };
+
+            var maxArtLength = asciiArt.Max(line => line.Length);
+            var output = new StringBuilder();
+
+            for (int i = 0; i < Math.Max(asciiArt.Length, info.Length); i++)
+            {
+                var artLine = i < asciiArt.Length ? asciiArt[i] : new string(' ', maxArtLength);
+                var infoLine = i < info.Length ? info[i] : "";
+
+                output.AppendLine($"{artLine}  {infoLine}");
+            }
+
+            ConsoleHelper.WriteResponse(output.ToString().TrimEnd());
             return Task.CompletedTask;
         }
     }
