@@ -640,6 +640,123 @@ public static class ConsoleHelper
     }
 }
 
+public static class TableHelper
+{
+    public static void PrintTable(IEnumerable<string> headers, IEnumerable<IEnumerable<string>> rows)
+    {
+        if (headers == null || !headers.Any() || rows == null)
+        {
+            return;
+        }
+
+        var headerList = headers.ToList();
+        var rowList = rows.Select(r => r.ToList()).ToList();
+        int columnCount = headerList.Count;
+
+        // Calculate available width (account for borders and padding)
+        int availableWidth = Console.WindowWidth - (columnCount * 3 + 1); // 3 for borders/padding per column, 1 for last border
+
+        // Calculate minimum column widths
+        var minColumnWidths = new int[columnCount];
+        for (int i = 0; i < columnCount; i++)
+        {
+            minColumnWidths[i] = Math.Max(
+                headerList[i].Length,
+                rowList.Max(r => r.Count > i ? r[i].Length : 0)
+            );
+        }
+
+        // Distribute remaining width proportionally
+        int totalMinWidth = minColumnWidths.Sum();
+        int remainingWidth = Math.Max(0, availableWidth - totalMinWidth);
+
+        var columnWidths = new int[columnCount];
+        if (remainingWidth > 0)
+        {
+            int totalWeight = minColumnWidths.Sum();
+            for (int i = 0; i < columnCount; i++)
+            {
+                double weight = (double)minColumnWidths[i] / totalWeight;
+                columnWidths[i] = minColumnWidths[i] + (int)(remainingWidth * weight);
+            }
+
+            // Adjust for rounding errors
+            while (columnWidths.Sum() > availableWidth)
+            {
+                columnWidths[columnWidths.Length - 1]--;
+            }
+        }
+        else
+        {
+            columnWidths = minColumnWidths;
+        }
+
+        // Print header top border with rounded corners
+        Console.ForegroundColor = ConsoleColor.DarkCyan;
+        Console.Write("╭");
+        for (int i = 0; i < columnWidths.Length; i++)
+        {
+            Console.Write(new string('─', columnWidths[i] + 2));
+            if (i < columnWidths.Length - 1)
+            {
+                Console.Write("┬");
+            }
+        }
+        Console.WriteLine("╮");
+
+        // Print header row
+        Console.Write("│");
+        for (int i = 0; i < headerList.Count; i++)
+        {
+            Console.Write($" {headerList[i].PadRight(columnWidths[i])} │");
+        }
+        Console.WriteLine();
+
+        // Print header bottom border
+        Console.Write("├");
+        for (int i = 0; i < columnWidths.Length; i++)
+        {
+            Console.Write(new string('─', columnWidths[i] + 2));
+            if (i < columnWidths.Length - 1)
+            {
+                Console.Write("┼");
+            }
+        }
+        Console.WriteLine("┤");
+
+        // Print rows
+        Console.ResetColor();
+        foreach (var row in rowList)
+        {
+            Console.Write("│");
+            for (int i = 0; i < row.Count; i++)
+            {
+                string cellText = row[i].Length > columnWidths[i]
+                    ? row[i].Substring(0, columnWidths[i] - 3) + "..."
+                    : row[i];
+
+                Console.Write($" {cellText.PadRight(columnWidths[i])} │");
+            }
+            Console.WriteLine();
+        }
+
+        // Print footer with rounded corners
+        Console.ForegroundColor = ConsoleColor.DarkCyan;
+        Console.Write("╰");
+        for (int i = 0; i < columnWidths.Length; i++)
+        {
+            Console.Write(new string('─', columnWidths[i] + 2));
+            if (i < columnWidths.Length - 1)
+            {
+                Console.Write("┴");
+            }
+        }
+        Console.WriteLine("╯");
+        Console.ResetColor();
+        Console.WriteLine();
+    }
+}
+
 public static class ScriptCache
 {
     private static readonly Dictionary<string, Script> _scriptCache = new();
@@ -1326,52 +1443,10 @@ public class CommandManager
             await ShowAllCommands();
         }
 
-        private async Task ShowCommandDetails(ICommand command)
-        {
-            var response = new StringBuilder();
-
-            // Заголовок команды
-            response.AppendLine($"{Localization.GetString("command")}: {command.Name}\n");
-
-            // Основная информация
-            response.AppendLine($"{Localization.GetString("description")}: {command.Description}");
-
-            if (command.Aliases.Any())
-            {
-                response.AppendLine($"{Localization.GetString("aliases")}: {string.Join(", ", command.Aliases)}");
-            }
-
-            response.AppendLine($"{Localization.GetString("author")}: {command.Author}");
-            response.AppendLine($"{Localization.GetString("version")}: {command.Version}");
-
-            // Примеры использования
-            if (!string.IsNullOrEmpty(command.UsageExample))
-            {
-                response.AppendLine();
-                response.AppendLine(Localization.GetString("usage_examples") + ":");
-                var examples = command.UsageExample.Split('\n');
-                foreach (var example in examples)
-                {
-                    response.AppendLine($"  {example.Trim()}");
-                }
-            }
-
-            // Проверка верификации
-            var fileName = $"{command.Name.ToLower()}.csx";
-            if (VerifiedExtensionsChecker.IsExtensionVerified(fileName))
-            {
-                response.AppendLine();
-                response.AppendLine($"{Localization.GetString("verification")}: ✅ {Localization.GetString("verified_safe")}");
-            }
-
-            ConsoleHelper.WriteResponse(response.ToString().TrimEnd());
-        }
-
         private async Task ShowAllCommands()
         {
             await VerifiedExtensionsChecker.EnsureHashesLoadedAsync();
 
-            var response = new StringBuilder();
             var allCommands = _manager.GetAllCommands()
                 .GroupBy(c => c.Name)
                 .Select(g => g.First())
@@ -1379,10 +1454,11 @@ public class CommandManager
                 .ToList();
 
             // Встроенные команды
-            response.AppendLine(Localization.GetString("builtin_commands"));
-            foreach (var cmd in allCommands.Where(c => _builtInCommands.Contains(c.Name)))
+            var builtInCommands = allCommands.Where(c => _builtInCommands.Contains(c.Name)).ToList();
+            if (builtInCommands.Any())
             {
-                response.AppendLine(FormatCommandLine(cmd));
+                ConsoleHelper.WriteResponse("builtin_commands");
+                PrintCommandsTable(builtInCommands);
             }
 
             // Проверенные команды
@@ -1398,12 +1474,8 @@ public class CommandManager
 
             if (verifiedCommands.Any())
             {
-                response.AppendLine();
-                response.AppendLine(Localization.GetString("verified_commands"));
-                foreach (var cmd in verifiedCommands)
-                {
-                    response.AppendLine(FormatCommandLine(cmd) + " ✅");
-                }
+                ConsoleHelper.WriteResponse("verified_commands");
+                PrintCommandsTable(verifiedCommands, true);
             }
 
             // Сторонние команды
@@ -1414,26 +1486,63 @@ public class CommandManager
 
             if (externalCommands.Any())
             {
-                response.AppendLine();
-                response.AppendLine(Localization.GetString("external_commands"));
-                foreach (var cmd in externalCommands)
-                {
-                    response.AppendLine(FormatCommandLine(cmd));
-                }
+                ConsoleHelper.WriteResponse("external_commands");
+                PrintCommandsTable(externalCommands);
             }
 
-            response.AppendLine();
-            response.Append(Localization.GetString("command_help"));
-            ConsoleHelper.WriteResponse(response.ToString());
+            ConsoleHelper.WriteResponse("command_help");
         }
 
-        private string FormatCommandLine(ICommand cmd)
+        private void PrintCommandsTable(List<ICommand> commands, bool showVerified = false)
         {
-            var aliases = cmd.Aliases.Any()
-                ? $" ({string.Join(", ", cmd.Aliases)})"
-                : "";
+            var headers = new List<string> { "Command", "Aliases", "Description" };
+            if (showVerified)
+            {
+                headers.Add("Status");
+            }
 
-            return $"  {cmd.Name,-12}{aliases,-15} - {cmd.Description}";
+            var rows = commands.Select(cmd =>
+            {
+                var row = new List<string>
+            {
+                cmd.Name,
+                cmd.Aliases.Any() ? string.Join(", ", cmd.Aliases) : "-",
+                cmd.Description
+            };
+
+                if (showVerified)
+                {
+                    row.Add("✅ Verified");
+                }
+
+                return row;
+            });
+
+            TableHelper.PrintTable(headers, rows);
+        }
+
+        private async Task ShowCommandDetails(ICommand command)
+        {
+            var fileName = $"{command.Name.ToLower()}.csx";
+            var isVerified = VerifiedExtensionsChecker.IsExtensionVerified(fileName);
+
+            var headers = new List<string> { "Property", "Value" };
+            var rows = new List<List<string>>
+        {
+            new List<string> { "Name", command.Name },
+            new List<string> { "Description", command.Description },
+            new List<string> { "Aliases", command.Aliases.Any() ? string.Join(", ", command.Aliases) : "-" },
+            new List<string> { "Author", command.Author },
+            new List<string> { "Version", command.Version },
+            new List<string> { "Status", isVerified ? "✅ Verified" : "⚠️ Not verified" }
+        };
+
+            if (!string.IsNullOrEmpty(command.UsageExample))
+            {
+                rows.Add(new List<string> { "Usage Examples", command.UsageExample.Replace("\n", "\n          ") });
+            }
+
+            TableHelper.PrintTable(headers, rows);
         }
     }
 
