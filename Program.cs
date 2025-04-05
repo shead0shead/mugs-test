@@ -1136,76 +1136,24 @@ public class CommandManager
         {
             var assemblies = new[]
             {
-            typeof(object).Assembly,
-            typeof(Enumerable).Assembly,
-            typeof(System.ComponentModel.Component).Assembly,
-            typeof(System.Diagnostics.Process).Assembly,
-            typeof(System.Dynamic.DynamicObject).Assembly,
-            typeof(System.IO.File).Assembly,
-            typeof(System.Net.WebClient).Assembly,
-            typeof(System.Text.RegularExpressions.Regex).Assembly,
-            typeof(System.Xml.XmlDocument).Assembly,
-            Assembly.GetExecutingAssembly()
-        };
+                typeof(object).Assembly,
+                typeof(Enumerable).Assembly,
+                typeof(System.ComponentModel.Component).Assembly,
+                typeof(System.Diagnostics.Process).Assembly,
+                typeof(System.Dynamic.DynamicObject).Assembly,
+                typeof(System.IO.File).Assembly,
+                typeof(System.Net.WebClient).Assembly,
+                typeof(System.Text.RegularExpressions.Regex).Assembly,
+                typeof(System.Xml.XmlDocument).Assembly,
+                Assembly.GetExecutingAssembly()
+            };
 
             var imports = new[]
             {
-                // Базовые пространства имен .NET
-                "System",
-                "System.IO",
-                "System.Linq",
-                "System.Collections",
-                "System.Collections.Generic",
-                "System.Diagnostics",
-                "System.Threading",
-                "System.Threading.Tasks",
-                "System.Text",
-                "System.Text.RegularExpressions",
-                "System.Net",
-                "System.Net.Http",
-                "System.Dynamic",
-                "System.Xml",
-                "System.Xml.Linq",
-    
-                // Дополнительные пространства имен
-                "System.Globalization",
-                "System.Security.Cryptography",
-                "System.Numerics",
-                "System.Runtime.InteropServices",
-                "System.Text.Json",
-                "System.Text.Encoding",
-                "System.Console",
-                "System.Math",
-                "System.Environment",
-                "System.Runtime",
-    
-                // Для работы с датами и временем
-                "System.DateTime",
-                "System.TimeSpan",
-    
-                // Для работы с JSON
-                "Newtonsoft.Json",
-                "Newtonsoft.Json.Linq",
-    
-                // Для анализа кода
-                "Microsoft.CodeAnalysis",
-                "Microsoft.CodeAnalysis.CSharp",
-    
-                // Для работы с процессами
-                "System.Diagnostics.Process",
-    
-                // Для работы с рефлексией
-                "System.Reflection",
-    
-                // Для работы с файловой системой
-                "System.IO.Compression",
-                "System.IO.FileSystem",
-    
-                // Для работы с асинхронными операциями
-                "System.Threading.Channels",
-    
-                // Для работы с геолокацией
-                "System.Device.Location"
+                "System", "System.IO", "System.Linq", "System.Collections",
+                "System.Collections.Generic", "System.Diagnostics", "System.Threading",
+                "System.Threading.Tasks", "System.Text", "System.Text.RegularExpressions",
+                "System.Net", "System.Net.Http", "System.Dynamic", "System.Xml", "System.Xml.Linq"
             };
 
             var scriptOptions = ScriptOptions.Default
@@ -2074,22 +2022,22 @@ new {char.ToUpper(commandName[0]) + commandName.Substring(1)}Command()";
     private class ScanCommand : ICommand
     {
         private static readonly HashSet<string> DangerousTypes = new()
-    {
-        "System.IO.File", "System.IO.Directory", "System.Diagnostics.Process",
-        "System.Net.WebClient", "System.Net.Http.HttpClient", "System.Reflection",
-        "System.Runtime.InteropServices", "System.Security", "System.Management",
-        "Microsoft.Win32", "System.Data.SqlClient", "System.Net.Sockets"
-    };
+        {
+            "System.IO.File", "System.IO.Directory", "System.Diagnostics.Process",
+            "System.Net.WebClient", "System.Net.Http.HttpClient", "System.Reflection",
+            "System.Runtime.InteropServices", "System.Security", "System.Management",
+            "Microsoft.Win32", "System.Data.SqlClient", "System.Net.Sockets"
+        };
 
         private static readonly HashSet<string> DangerousMethods = new()
-    {
-        "Delete", "Kill", "Start", "Execute", "Run", "Format",
-        "WriteAllText", "WriteAllBytes", "WriteAllLines",
-        "Remove", "Move", "Copy", "Create", "OpenWrite",
-        "DownloadFile", "UploadFile", "ExecuteNonQuery",
-        "ShellExecute", "CreateProcess", "Invoke",
-        "GetProcAddress", "LoadLibrary", "SetWindowsHook"
-    };
+        {
+            "Delete", "Kill", "Start", "Execute", "Run", "Format",
+            "WriteAllText", "WriteAllBytes", "WriteAllLines",
+            "Remove", "Move", "Copy", "Create", "OpenWrite",
+            "DownloadFile", "UploadFile", "ExecuteNonQuery",
+            "ShellExecute", "CreateProcess", "Invoke",
+            "GetProcAddress", "LoadLibrary", "SetWindowsHook"
+        };
 
         private readonly string _extensionsPath;
 
