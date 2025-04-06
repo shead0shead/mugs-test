@@ -157,7 +157,6 @@ public static class Localization
             }
         }
 
-        // Если нет ни одного языка, создаем английский по умолчанию
         if (!_allLanguages.ContainsKey("en"))
         {
             _allLanguages["en"] = new LanguageData
@@ -401,7 +400,6 @@ public class CommandMetadata
     public DateTime LastModified { get; set; }
 }
 
-// Добавьте класс для управления кэшем метаданных
 public static class MetadataCache
 {
     private const string CacheFile = "command_cache.json";
@@ -441,7 +439,7 @@ public static class MetadataCache
     public static void Clear()
     {
         _cache.Clear();
-        Save(); // Сохраняем пустой кэш
+        Save();
     }
 
     public static bool TryGetFromCache(string filePath, out CommandMetadata metadata)
@@ -580,7 +578,6 @@ public static class ConsoleHelper
         Console.ForegroundColor = isValid ? ConsoleColor.Gray : ConsoleColor.Red;
         Console.Write(input);
 
-        // Добавляем проверку настройки
         if (AppSettings.EnableSuggestions && !string.IsNullOrEmpty(input))
         {
             var suggestion = manager.GetCommandSuggestion(input.Split(' ')[0]);
@@ -1055,9 +1052,9 @@ public class CommandManager
 
     public async Task LoadCommandsAsync()
     {
-        _commands.Clear(); // Очищаем все команды
+        _commands.Clear();
         ScriptCache.Clear();
-        MetadataCache.Clear(); // Добавляем очистку кэша метаданных
+        MetadataCache.Clear();
         RegisterBuiltInCommands();
         await LoadExternalCommandsAsync();
     }
@@ -1127,7 +1124,6 @@ public class CommandManager
 
         if (isScript)
         {
-            // Проверяем кэш для скриптов
             if (ScriptCache.TryGetScript(filePath, out var cachedScript))
             {
                 try
@@ -1144,12 +1140,10 @@ public class CommandManager
                 }
             }
 
-            // Если скрипта нет в кэше, загружаем его
             return await LoadFromScriptAsync(code, filePath);
         }
         else
         {
-            // Проверяем кэш для сборок
             if (ScriptCache.TryGetAssembly(filePath, out var cachedAssembly))
             {
                 return cachedAssembly.GetTypes()
@@ -1157,7 +1151,6 @@ public class CommandManager
                     .Select(type => (ICommand)Activator.CreateInstance(type));
             }
 
-            // Если сборки нет в кэше, компилируем
             var commands = await LoadFromClassFileAsync(code, filePath);
             return commands;
         }
@@ -1195,7 +1188,6 @@ public class CommandManager
 
             var globalsType = typeof(CommandGlobals);
 
-            // Проверяем кэш
             if (ScriptCache.TryGetScript(filePath, out var cachedScript))
             {
                 try
@@ -1208,11 +1200,9 @@ public class CommandManager
                 catch
                 {
                     ScriptCache.Clear();
-                    // Продолжаем с обычной загрузкой
                 }
             }
 
-            // Добавляем поддержку #load директив
             var processedCode = ProcessLoadDirectives(code, filePath);
 
             var script = CSharpScript.Create(processedCode, scriptOptions, globalsType);
@@ -1313,7 +1303,6 @@ public class CommandManager
         ms.Seek(0, SeekOrigin.Begin);
         var assembly = Assembly.Load(ms.ToArray());
 
-        // Кэшируем загруженную сборку
         ScriptCache.AddAssembly(filePath, assembly);
 
         return assembly.GetTypes()
@@ -1337,7 +1326,6 @@ public class CommandManager
     {
         var commandName = name.ToLowerInvariant();
 
-        // Проверка пользовательских алиасов
         if (AliasManager.GetCommandName(commandName) is string resolvedName)
         {
             commandName = resolvedName;
@@ -1417,10 +1405,7 @@ public class CommandManager
         {
             var response = new StringBuilder();
 
-            // Заголовок команды
             response.AppendLine($"{Localization.GetString("command")}: {command.Name}\n");
-
-            // Основная информация
             response.AppendLine($"{Localization.GetString("description")}: {command.Description}");
 
             if (command.Aliases.Any())
@@ -1431,7 +1416,6 @@ public class CommandManager
             response.AppendLine($"{Localization.GetString("author")}: {command.Author}");
             response.AppendLine($"{Localization.GetString("version")}: {command.Version}");
 
-            // Примеры использования
             if (!string.IsNullOrEmpty(command.UsageExample))
             {
                 response.AppendLine();
@@ -1443,7 +1427,6 @@ public class CommandManager
                 }
             }
 
-            // Проверка верификации
             var fileName = $"{command.Name.ToLower()}.csx";
             if (VerifiedExtensionsChecker.IsExtensionVerified(fileName))
             {
@@ -1465,14 +1448,12 @@ public class CommandManager
                 .OrderBy(c => c.Name)
                 .ToList();
 
-            // Встроенные команды
             response.AppendLine(Localization.GetString("builtin_commands"));
             foreach (var cmd in allCommands.Where(c => _builtInCommands.Contains(c.Name)))
             {
                 response.AppendLine(FormatCommandLine(cmd));
             }
 
-            // Проверенные команды
             var verifiedCommands = new List<ICommand>();
             foreach (var cmd in allCommands.Where(c => !_builtInCommands.Contains(c.Name)))
             {
@@ -1493,7 +1474,6 @@ public class CommandManager
                 }
             }
 
-            // Сторонние команды
             var externalCommands = allCommands
                 .Where(c => !_builtInCommands.Contains(c.Name) &&
                        !verifiedCommands.Contains(c))
@@ -1598,7 +1578,7 @@ public class CommandManager
         public async Task ExecuteAsync(string[] args)
         {
             ConsoleHelper.WriteResponse("reloading_commands");
-            MetadataCache.Clear(); // Принудительная очистка
+            MetadataCache.Clear();
             await _manager.LoadCommandsAsync();
             ConsoleHelper.WriteResponse(Localization.GetString("commands_reloaded") + "\n" + Localization.GetString("cache_cleared"));
         }
@@ -1954,7 +1934,6 @@ public class CommandManager
         {
             if (args.Length == 0)
             {
-                // Показываем текущий язык и доступные языки
                 var response = new StringBuilder();
                 response.AppendLine(Localization.GetString("current_language",
                     $"{Localization.GetLanguageName(Localization.CurrentLanguage)} ({Localization.CurrentLanguage})"));
@@ -1968,7 +1947,6 @@ public class CommandManager
             }
             else
             {
-                // Меняем язык
                 var langCode = args[0].ToLower();
                 if (Localization.GetAvailableLanguages().Contains(langCode))
                 {
@@ -2150,7 +2128,6 @@ public class CommandManager
 
             var fileName = args[0];
 
-            // Добавляем .csx если нужно
             if (!fileName.EndsWith(".csx", StringComparison.OrdinalIgnoreCase))
             {
                 fileName += ".csx";
@@ -2425,7 +2402,6 @@ public class CommandGlobals
 
     public CommandManager Manager { get; set; }
 
-    // Новые методы для работы с общими данными и скриптами
     public void SetSharedData(string key, object value) => SharedData.Set(key, value);
     public T GetSharedData<T>(string key) => SharedData.Get<T>(key);
     public bool HasSharedData(string key) => SharedData.Contains(key);
@@ -2438,14 +2414,12 @@ public class CommandGlobals
             throw new FileNotFoundException($"Script file not found: {scriptName}");
         }
 
-        // Проверяем, не загружен ли уже этот скрипт
         var cachedAssembly = SharedData.GetScriptAssembly(scriptName);
         if (cachedAssembly != null)
         {
             return CreateScriptProxy(cachedAssembly);
         }
 
-        // Загружаем скрипт
         var scriptCode = File.ReadAllText(scriptPath);
         var script = CSharpScript.Create(scriptCode,
             ScriptOptions.Default
@@ -2478,13 +2452,11 @@ public class CommandGlobals
 
     private dynamic CreateScriptProxy(Assembly assembly)
     {
-        // Создаем динамический объект, который будет проксировать вызовы к классам из сборки
         dynamic proxy = new ExpandoObject();
         var proxyDict = (IDictionary<string, object>)proxy;
 
         foreach (var type in assembly.GetTypes().Where(t => t.IsPublic))
         {
-            // Для каждого публичного класса добавляем свойство в прокси
             proxyDict[type.Name] = Activator.CreateInstance(type);
         }
 
